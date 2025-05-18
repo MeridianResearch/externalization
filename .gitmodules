@@ -1,0 +1,3 @@
+[submodule "shared_utils"]
+	path = shared_utils
+	url = https://github.com/CamMARS2025/shared_utils
