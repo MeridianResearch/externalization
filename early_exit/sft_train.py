@@ -161,4 +161,3 @@ for epoch in range(num_epoch):
 
             assert len(prompt_batch.idx) == 1, "Again, batch greater than 1 not allowed yet"
             wandb.log(log_dict)
-
