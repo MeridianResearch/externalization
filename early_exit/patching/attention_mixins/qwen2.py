@@ -127,7 +127,13 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
-
+        if not hasattr(self, "num_heads"):
+            self.num_heads = self.config.num_attention_heads
+        if not hasattr(self, "num_key_value_heads"):
+            self.num_key_value_heads = self.config.num_key_value_heads
+        if not hasattr(self, "hidden_size"):
+            self.hidden_size = self.config.hidden_size
+ 
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
@@ -144,6 +150,7 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
             cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
+        
         if past_key_value is not None:
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}  # Specific to RoPE models
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
