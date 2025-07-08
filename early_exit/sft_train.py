@@ -12,7 +12,6 @@ from shared_utils.generate import generate_text
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 
 import wandb
-from torch.amp import GradScaler, autocast
 
 # LOAD IN EXPERIMENT ARGS
 num_epoch = 1                     # args.num_epoch
@@ -52,7 +51,6 @@ model = replace_attention_layers(model, config['lora'], device)
 model.train()
 
 optimiser = Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-5)
-scaler = GradScaler("cuda")
 
 run = wandb.init(
     #entity="cot-mrc",
@@ -73,62 +71,61 @@ for epoch in range(num_epoch):
     for prompt_batch in dataloader:
 
         batch_ticker += 1
-        with autocast(device_type='cuda', dtype=torch.float16):
 
-            with torch.no_grad():
-                # Generate SFT targets
-                set_transformer_early_exit_mode(model, 'sft_teacher')
-                sft_teacher_response, (sft_teacher_generated_tokens, sft_teacher_final_layer_logprobs, gathered_early_exit_hidden_states) =\
-                    generate_text(
-                        model=model, 
-                        prompt=prompt_batch.full_user_prompt, 
-                        system_prompt=dataset.system_prompt, 
-                        prefiller=dataset.prefiller, 
-                        tokenizer=tokenizer, 
-                        generation_config=config['generation'], 
-                        device=device
-                    )
-                print(sft_teacher_response)
-    
-                early_output_log_probs = model.early_exit_hidden_state_readout(gathered_early_exit_hidden_states)               # [batch, num exitable layers, gen len, vocabulary]
-                early_exit_probs = model.early_exit_target_probs(early_output_log_probs = early_output_log_probs, teacher_final_layer_log_probs = sft_teacher_final_layer_logprobs)
-                repeated_sft_teacher_final_layer_logprobs = sft_teacher_final_layer_logprobs.repeat(num_exit_samples, 1, 1)     # XXX repeat_interleave? [batch * samples, full length, vocabulary]
-    
-    
-            # Sample early exits
-            batch, gen_len, elayers = early_exit_probs.shape                                                                                                # [batch, generation length, exitable layers]
-            full_len = sft_teacher_generated_tokens.shape[1]
-            repeated_sft_teacher_generated_tokens = sft_teacher_generated_tokens.expand(num_exit_samples * batch, full_len)                                 # [batch * samples, full length]
-            sampled_early_exit_layer_idxs_early_with_sample_dim = torch.distributions.Categorical(probs = early_exit_probs).sample((num_exit_samples,))     # [samples, batch, generation length] 
-            sampled_early_exit_layer_idxs_early = sampled_early_exit_layer_idxs_early_with_sample_dim.reshape(batch * num_exit_samples, gen_len)            # [batch * samples, generation length]
-            sampled_early_exit_layer_idxs = model.exitable_layer_idxs[sampled_early_exit_layer_idxs_early.cpu()]                                            # [batch * samples, generation length]
-            
-    
-            # Generate with prescription
-            set_transformer_early_exit_mode(model, 'sft_student')
-            sft_student_output_scores, collected_exit_logits = model(repeated_sft_teacher_generated_tokens, prescribed_exit_layer_idxs = sampled_early_exit_layer_idxs) # [batch * samples, full length, vocabulary]
-    
-    
-            # Get KL divergences of the outputs
-            print('CRUDE KL AND MAKE SURE PROBS ARE ALIGNED')
-            eps = 1e-16
-            sft_teacher_probs = sft_teacher_final_layer_logprobs.softmax(-1)                        # [batch * samples, gen len, vocabulary]
-            sft_student_probs = sft_student_output_scores.logits[:,-gen_len:].softmax(-1)           # [batch * samples, gen len, vocabulary]
-            token_logits_kl_div = (sft_student_probs * ((sft_student_probs + eps) / (sft_teacher_probs + eps)).log()).sum(-1)   # [batch * samples, gen len]
-            mean_logit_kl = token_logits_kl_div.mean()
-    
-            # Get KL divergences of early exit preds
-            print('CRUDE KL AND MAKE SURE PROBS ARE ALIGNED AGAIN')
-            eps = 1e-16
-            sft_student_early_exit_probs = model.early_exit_student_probs(collected_exit_logits)            # [batch, gen len, layers + 1]
-            mean_exit_logprob = - (sft_student_early_exit_probs + 1e-16).gather(index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).log().mean()  # [batch, gen len, 1] -> scalar
-    
-            optimiser.zero_grad()
-            total_loss = mean_logit_kl + mean_exit_logprob
-            total_loss.backward()
-            optimiser.step()
-    
-            torch.cuda.empty_cache()
+        with torch.no_grad():
+            # Generate SFT targets
+            set_transformer_early_exit_mode(model, 'sft_teacher')
+            sft_teacher_response, (sft_teacher_generated_tokens, sft_teacher_final_layer_logprobs, gathered_early_exit_hidden_states) =\
+                generate_text(
+                    model=model, 
+                    prompt=prompt_batch.full_user_prompt, 
+                    system_prompt=dataset.system_prompt, 
+                    prefiller=dataset.prefiller, 
+                    tokenizer=tokenizer, 
+                    generation_config=config['generation'], 
+                    device=device
+                )
+            print(sft_teacher_response)
+
+            early_output_log_probs = model.early_exit_hidden_state_readout(gathered_early_exit_hidden_states)               # [batch, num exitable layers, gen len, vocabulary]
+            early_exit_probs = model.early_exit_target_probs(early_output_log_probs = early_output_log_probs, teacher_final_layer_log_probs = sft_teacher_final_layer_logprobs)
+            repeated_sft_teacher_final_layer_logprobs = sft_teacher_final_layer_logprobs.repeat(num_exit_samples, 1, 1)     # XXX repeat_interleave? [batch * samples, full length, vocabulary]
+
+
+        # Sample early exits
+        batch, gen_len, elayers = early_exit_probs.shape                                                                                                # [batch, generation length, exitable layers]
+        full_len = sft_teacher_generated_tokens.shape[1]
+        repeated_sft_teacher_generated_tokens = sft_teacher_generated_tokens.expand(num_exit_samples * batch, full_len)                                 # [batch * samples, full length]
+        sampled_early_exit_layer_idxs_early_with_sample_dim = torch.distributions.Categorical(probs = early_exit_probs).sample((num_exit_samples,))     # [samples, batch, generation length] 
+        sampled_early_exit_layer_idxs_early = sampled_early_exit_layer_idxs_early_with_sample_dim.reshape(batch * num_exit_samples, gen_len)            # [batch * samples, generation length]
+        sampled_early_exit_layer_idxs = model.exitable_layer_idxs[sampled_early_exit_layer_idxs_early.cpu()]                                            # [batch * samples, generation length]
+        
+
+        # Generate with prescription
+        set_transformer_early_exit_mode(model, 'sft_student')
+        sft_student_output_scores, collected_exit_logits = model(repeated_sft_teacher_generated_tokens, prescribed_exit_layer_idxs = sampled_early_exit_layer_idxs) # [batch * samples, full length, vocabulary]
+
+
+        # Get KL divergences of the outputs
+        print('CRUDE KL AND MAKE SURE PROBS ARE ALIGNED')
+        eps = 1e-16
+        sft_teacher_probs = sft_teacher_final_layer_logprobs.softmax(-1)                        # [batch * samples, gen len, vocabulary]
+        sft_student_probs = sft_student_output_scores.logits[:,-gen_len:].softmax(-1)           # [batch * samples, gen len, vocabulary]
+        token_logits_kl_div = (sft_student_probs * ((sft_student_probs + eps) / (sft_teacher_probs + eps)).log()).sum(-1)   # [batch * samples, gen len]
+        mean_logit_kl = token_logits_kl_div.mean()
+
+        # Get KL divergences of early exit preds
+        print('CRUDE KL AND MAKE SURE PROBS ARE ALIGNED AGAIN')
+        eps = 1e-16
+        sft_student_early_exit_probs = model.early_exit_student_probs(collected_exit_logits)            # [batch, gen len, layers + 1]
+        mean_exit_logprob = - (sft_student_early_exit_probs + 1e-16).gather(index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).log().mean()  # [batch, gen len, 1] -> scalar
+
+        optimiser.zero_grad()
+        total_loss = mean_logit_kl + mean_exit_logprob
+        total_loss.backward()
+        optimiser.step()
+
+        torch.cuda.empty_cache()
 
         # Package and log
         with torch.no_grad():
