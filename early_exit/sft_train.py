@@ -3,9 +3,9 @@ from torch.optim import Adam
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
-from shared_util.data import CSVPromptDataset
-from shared_util.load import get_model, get_tokenizer, configs_from_yaml
-from shared_util.generate import generate_text
+from shared_utils.data import CSVPromptDataset
+from shared_utils.load import get_model, get_tokenizer, configs_from_yaml
+from shared_utils.generate import generate_text
 
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 
@@ -53,7 +53,7 @@ optimiser = Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-5)
 
 
 run = wandb.init(
-    entity="cot-mrc",
+    # entity="cot-mrc",
     project="early-exit",
     config=dict(
         **config,

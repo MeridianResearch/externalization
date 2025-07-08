@@ -128,6 +128,14 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
+        # print("Number of attention heads = ", self.config)if not hasattr(self, "num_heads"):
+        if not hasattr(self, "num_heads"):
+            self.num_heads = self.config.num_attention_heads
+        if not hasattr(self, "num_key_value_heads"):
+            self.num_key_value_heads = self.config.num_key_value_heads
+        if not hasattr(self, "hidden_size"):
+            self.hidden_size = self.config.hidden_size
+
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
@@ -181,7 +189,7 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
         attn_output = torch.matmul(attn_weights, value_states)
-
+        print("Number of attention heads = ", self.config)
         if attn_output.size() != (len(unfrozen_batch_idx), self.num_heads, q_len, self.head_dim):
             raise ValueError(
                 f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
