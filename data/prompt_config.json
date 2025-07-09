@@ -1,0 +1,5 @@
+{
+    "system_prompt": "",
+    "task_context": "I am going to give you a story and a question about the story. Read the following story carefully, understand the characters' actions and perspectives, then answer the question regarding object locations, character knowledge, and beliefs.",
+    "prefiller": ""
+}
