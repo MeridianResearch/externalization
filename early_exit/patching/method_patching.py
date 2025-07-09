@@ -255,5 +255,7 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
     for name, param in model.named_parameters():
         if 'lora' in name:
             param.requires_grad = True
+        if 'early_exit_decision_weights' in name:
+            param.requires_grad = True
 
     return model.to(device)
