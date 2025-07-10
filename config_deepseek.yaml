@@ -1,0 +1,26 @@
+model:
+  load_precision_mode: none # Options: [none,"4bits","8bits","full"]
+  lora: false
+
+lora:
+  r: 8
+  lora_alpha: 16
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+  lora_dropout: 0.05
+  bias: "none" #sticking to example : https://huggingface.co/docs/trl/main/en/peft_integration
+
+
+generation:
+  min_length: 0
+  # top_k: 0.0
+  top_p: 0.95
+  num_beams: 1
+  temperature: 0.6
+  do_sample: true
+  #pad_token_id: 0
+  bos_token_id: 151646
+  eos_token_id: 151643
+  max_new_tokens: 400
+  # return_prompt: False
+  # generate_ref_response: False
+  use_cache: true

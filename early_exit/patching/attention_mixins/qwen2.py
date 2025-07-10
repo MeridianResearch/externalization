@@ -51,13 +51,12 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
 
         elif unfrozen_idx_or_mask is None:
             unfrozen_elements = torch.ones((bsz, q_len), dtype=torch.bool, device=hidden_states.device)
-
+            
         residual = hidden_states
 
         hidden_states[unfrozen_elements] = self.input_layernorm(hidden_states[unfrozen_elements])
         # Self Attention
-        if unfrozen_idx_or_mask is not None:
-            hidden_states, self_attn_weights, past_key_value = self.self_attn(
+        attention_output = self.self_attn(
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
@@ -68,18 +67,12 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
                 position_embeddings=position_embeddings,
                 unfrozen_idx_or_mask=unfrozen_idx_or_mask       # Key change
             )
+        ### TODO: The following statements are very hacky. Please change it in the future versions
+        if len(attention_output) == 3:
+            hidden_states, self_attn_weights, present_key_value = attention_output
         else:
-            hidden_states, self_attn_weights = self.self_attn(
-                hidden_states=hidden_states,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_value=past_key_value,
-                output_attentions=output_attentions,
-                use_cache=use_cache,
-                cache_position=cache_position,
-                position_embeddings=position_embeddings,
-                unfrozen_idx_or_mask=unfrozen_idx_or_mask       # Key change
-            )            
+            hidden_states, self_attn_weights = attention_output
+            present_key_value = None
         # print("Unfrozen elements = ", unfrozen_elements) 
         # print("Unfrozen idx or mask = ", unfrozen_idx_or_mask) 
         # print("Not Unfrozen elements = ", ~unfrozen_elements)
@@ -88,8 +81,6 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         # print("Residual states sum = ", residual[~unfrozen_elements].sum())
         # print("Original hidden states sum = ", _original_hidden_states[~unfrozen_elements].sum())
         hidden_states = residual + hidden_states
-        
-
         # Fully Connected
         residual = hidden_states
         hidden_states[unfrozen_elements] = self.post_attention_layernorm(hidden_states[unfrozen_elements])
@@ -101,7 +92,7 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         if output_attentions:
             outputs += (self_attn_weights,)
 
-        if use_cache:
+        if use_cache and present_key_value is not None:
             outputs += (present_key_value,)
         
         assert (_original_hidden_states == hidden_states)[~unfrozen_elements].all()
