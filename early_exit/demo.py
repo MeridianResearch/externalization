@@ -1,8 +1,9 @@
 import torch
 
-from shared_util.load import get_model, get_tokenizer, configs_from_yaml
-from shared_util.generate import generate_text
-from shared_util.prompts import BayesianProblemRewardHackingPromptFarm
+from early_exit.util import get_model
+from shared_utils.load import get_tokenizer, configs_from_yaml
+from shared_utils.generate import generate_text
+from shared_utils.prompts import BayesianProblemRewardHackingPromptFarm
 
 
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
