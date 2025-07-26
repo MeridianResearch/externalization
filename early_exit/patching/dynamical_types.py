@@ -135,6 +135,75 @@ def generate_layer_type_with_early_exit_decision_head(base_type: Type[AutoModelF
     return DynamicallyTypedLayerWithExit
 
 
+def generate_layer_type_WITHOUT_early_exit_decision_head(base_type: Type[AutoModelForCausalLM]):
+    """
+    Different Hugging Face transformer architectures have different types for their (macro-)layers,
+        and these different types also have their own config types.
+    
+    This function generates a new class which dynamically inherits from the layer classes,
+        but WITHOUT early exit decision heads - just uses patched_layer_forward().
+    """
+    mixin_type: Type[LayerFakeAttentionForwardMixin] = ATTN_MIXIN_DICT[base_type.__name__]
+
+    class DynamicallyTypedLayerWithoutExit(mixin_type, base_type):
+
+        exit_state: ExitLogger | ExitPrescription | ExitProbabilities
+        
+        def __init__(self, config: AutoConfig, exitable_layer_idx: int, **kwargs) -> None:
+            super().__init__(config, **kwargs)
+
+            self.config = config
+            self.layer_idx = kwargs['layer_idx']
+            self.exitable_layer_idx = exitable_layer_idx
+            self.vocab_size = config.vocab_size
+
+            # NOTE: No early_exit_decision_weights - removed early exit decision head
+
+        def forward(self, hidden_states: _T, **kwargs):
+            """
+            hidden_states comes in shape [B, L, D]
+
+            - Assume that if L > 1, we are cache-building in the prompt forwardpass, so never exit anyway
+                XXX: this is quite unsafe though! maybe check cache or something similar?
+            """
+            B, L, D = hidden_states.shape
+
+            if self.early_exit_mode == 'free_generate':
+                if L == 1:
+                    # No decision making - just use existing unfrozen items
+                    return self.patched_layer_forward(
+                        hidden_states = hidden_states,
+                        **kwargs,
+                        unfrozen_idx_or_mask = self.exit_state.unfrozen_batch_items,
+                    )
+                else:
+                    return self.patched_layer_forward(
+                        hidden_states = hidden_states, **kwargs
+                    )
+
+            elif self.early_exit_mode == 'sft_student':
+                # Get unfrozen mask and call patched_layer_forward
+                unfrozen_mask = self.exit_state.get_unfrozen_mask(self.layer_idx)
+
+                return self.patched_layer_forward(
+                    hidden_states = hidden_states,
+                    **kwargs,
+                    unfrozen_idx_or_mask = unfrozen_mask
+                )
+
+            elif self.early_exit_mode == 'sft_teacher':
+                # Normal forward pass - no logging or decision making
+                return super().forward(hidden_states = hidden_states, **kwargs)
+            
+            elif self.early_exit_mode == 'off':
+                return super().forward(hidden_states = hidden_states, **kwargs)
+
+            else:
+                raise AttributeError(self.early_exit_mode)
+
+    return DynamicallyTypedLayerWithoutExit
+
+
 
 
 def generate_model_type_with_early_exit_readout_head(base_type: Type[nn.Module]):
