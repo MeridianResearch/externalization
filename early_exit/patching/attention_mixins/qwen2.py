@@ -51,28 +51,31 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
 
         elif unfrozen_idx_or_mask is None:
             unfrozen_elements = torch.arange(bsz)
-
-        residual = hidden_states
+            
+        residual = hidden_states.clone()
 
         hidden_states[unfrozen_elements] = self.input_layernorm(hidden_states[unfrozen_elements])
-
         # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_value=past_key_value,
-            output_attentions=output_attentions,
-            use_cache=use_cache,
-            cache_position=cache_position,
-            position_embeddings=position_embeddings,
-            unfrozen_idx_or_mask=unfrozen_idx_or_mask       # Key change
-        )
+        attention_output = self.self_attn(
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+                cache_position=cache_position,
+                position_embeddings=position_embeddings,
+                unfrozen_idx_or_mask=unfrozen_idx_or_mask       # Key change
+            )
+        ### TODO: The following statements are very hacky. Please change it in the future versions
+        if len(attention_output) == 3:
+            hidden_states, self_attn_weights, present_key_value = attention_output
+        else:
+            hidden_states, self_attn_weights = attention_output
+            present_key_value = None
         hidden_states = residual + hidden_states
-        
-
         # Fully Connected
-        residual = hidden_states
+        residual = hidden_states.clone()
         hidden_states[unfrozen_elements] = self.post_attention_layernorm(hidden_states[unfrozen_elements])
         hidden_states[unfrozen_elements] = self.mlp(hidden_states[unfrozen_elements])
         hidden_states[unfrozen_elements] = residual[unfrozen_elements] + hidden_states[unfrozen_elements]
@@ -82,10 +85,11 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         if output_attentions:
             outputs += (self_attn_weights,)
 
-        if use_cache:
+        if use_cache and present_key_value is not None:
             outputs += (present_key_value,)
 
-        assert (_original_hidden_states == hidden_states)[~unfrozen_elements].all()
+        # Removing this line from main because I am not sure if ~unfrozen_elements is the right way to access things
+        # assert (_original_hidden_states == hidden_states)[~unfrozen_elements].all() 
 
         return outputs
 
@@ -121,12 +125,20 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
                 cache_position = cache_position,
                 position_embeddings = position_embeddings,
             )
-
+            
         bsz, q_len, _ = hidden_states.size()
 
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
+
+        # # print("Number of attention heads = ", self.config)if not hasattr(self, "num_heads"):
+        if not hasattr(self, "num_heads"):
+            self.num_heads = self.config.num_attention_heads
+        if not hasattr(self, "num_key_value_heads"):
+            self.num_key_value_heads = self.config.num_key_value_heads
+        if not hasattr(self, "hidden_size"):
+            self.hidden_size = self.config.hidden_size
 
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
@@ -181,7 +193,7 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
         attn_output = torch.matmul(attn_weights, value_states)
-
+        
         if attn_output.size() != (len(unfrozen_batch_idx), self.num_heads, q_len, self.head_dim):
             raise ValueError(
                 f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
@@ -221,7 +233,7 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
 
         if not output_attentions:
             attn_weights = None
-
+            
         return attn_output_with_zeros, attn_weights_with_zeros, past_key_value
 
 

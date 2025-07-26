@@ -31,7 +31,7 @@ def patched_forward_generation(self: EarlyExitModelMixin | PeftModelForCausalLM,
     assert self.early_exit_mode == 'free_generate'
     for name, module in self.named_modules():
         if module_name_is_layer_base(name):
-            print(name)
+            # print(name)
             assert module.early_exit_mode == 'free_generate'
             module.exit_state = exit_state
 
@@ -254,6 +254,8 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
     model.requires_grad_(False)  # Freeze all
     for name, param in model.named_parameters():
         if 'lora' in name:
+            param.requires_grad = True
+        if 'early_exit_decision_weights' in name:
             param.requires_grad = True
 
     return model.to(device)
