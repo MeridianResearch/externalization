@@ -1,5 +1,0 @@
-transformers
-peft
-pandas
-bitsandbytes
-wandb

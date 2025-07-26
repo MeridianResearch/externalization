@@ -3,9 +3,10 @@ from torch.optim import Adam
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
-from shared_util.data import CSVPromptDataset
-from shared_util.load import get_model, get_tokenizer, configs_from_yaml
-from shared_util.generate import generate_text
+from shared_utils.data import CSVPromptDataset
+from early_exit.util import get_model
+from shared_utils.load import get_tokenizer, configs_from_yaml
+from shared_utils.generate import generate_text
 
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 
@@ -53,7 +54,7 @@ optimiser = Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-5)
 
 
 run = wandb.init(
-    entity="cot-mrc",
+    # entity="cot-mrc",
     project="early-exit",
     config=dict(
         **config,
@@ -110,7 +111,8 @@ for epoch in range(num_epoch):
         print('CRUDE KL AND MAKE SURE PROBS ARE ALIGNED')
         eps = 1e-16
         sft_teacher_probs = sft_teacher_final_layer_logprobs.softmax(-1)                        # [batch * samples, gen len, vocabulary]
-        sft_student_probs = sft_student_output_scores.logits[:,-gen_len:].softmax(-1)           # [batch * samples, gen len, vocabulary]
+        # Intial version: sft_student_probs = sft_student_output_scores.logits[:,-gen_len:].softmax(-1)           # [batch * samples, gen len, vocabulary]
+        sft_student_probs = sft_student_output_scores.logits[:,-gen_len-1:-1].softmax(-1)       # [batch * samples, gen len, vocabulary]  
         token_logits_kl_div = (sft_student_probs * ((sft_student_probs + eps) / (sft_teacher_probs + eps)).log()).sum(-1)   # [batch * samples, gen len]
         mean_logit_kl = token_logits_kl_div.mean()
 

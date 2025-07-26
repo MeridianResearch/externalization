@@ -6,6 +6,8 @@ from torch import Tensor as _T
 from dataclasses import dataclass, field
 from typing import Optional, List
 
+from transformers import AutoConfig, AutoModelForCausalLM, BitsAndBytesConfig
+
 
 
 
@@ -105,5 +107,27 @@ class ExitPrescription:
         """
         return self.prescribed_exit_layer_idxs >= current_layer_idx
 
-
-
+def get_model(model_name: str, model_config: dict, device: str):
+    
+    quantization_config = {
+        "4bits": BitsAndBytesConfig(load_in_4bit=True),
+        "8bits": BitsAndBytesConfig(load_in_8bit=True)
+    }.get(model_config['load_precision_mode'], None)
+    
+    # Handle attention implementation if specified
+    config = None
+    if 'attn_implementation' in model_config:
+        config = AutoConfig.from_pretrained(model_name)
+        config._attn_implementation = model_config['attn_implementation']
+    
+    if model_config['lora']:
+        raise NotImplementedError
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.bfloat16,
+            quantization_config=quantization_config,
+            config=config,
+        )
+        
+    return model.to(device)

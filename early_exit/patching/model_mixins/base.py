@@ -60,10 +60,10 @@ class EarlyExitModelMixin(ABC, nn.Module):
         early_output_probs = early_output_log_probs.exp()
 
         # Sum over vocab -> [batch, exitable layers, sequence]
-        print('CRUDE KL')
+        # print('CRUDE KL')
         eps = 1e-16
-        # kl_div = (teacher_expanded * ((teacher_expanded + eps) / (early_output_probs + eps)).log()).sum(-1)
-        kl_div = - (teacher_expanded * (early_output_probs + eps).log()).sum(-1)
+        kl_div = (teacher_expanded * ((teacher_expanded + eps) / (early_output_probs + eps)).log()).sum(-1)
+        # kl_div = - (teacher_expanded * (early_output_probs + eps).log()).sum(-1)
 
         # 2. Scale KL divergencees by KL_FACTOR and pass through sigmoid (0-1)
         sigmoid_kls = torch.sigmoid(KL_FACTOR * kl_div)  # [batch, exitable layers, sequence]
