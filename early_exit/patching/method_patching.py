@@ -98,7 +98,7 @@ def patched_forward_sft_student(self: EarlyExitModelMixin | PeftModelForCausalLM
     
     assert self.early_exit_mode == 'sft_student'
     for name, module in self.named_modules():
-        if module_name_is_layer_base(name):
+        if module_name_is_transformer_layer(name):
             assert module.early_exit_mode == 'sft_student'
             module.exit_state = exit_state
 
@@ -174,7 +174,8 @@ def set_transformer_early_exit_mode(model: EarlyExitModelMixin | PeftModelForCau
         model.eval()
 
     for name, module in model.named_modules():
-        if module_name_is_layer_base(name):
+        compare_func = module_name_is_transformer_layer if mode in ['free_generate', 'sft_student'] else module_name_is_layer_base 
+        if compare_func(name):
             set_layer_early_exit_mode(module, mode)
             
 
@@ -187,18 +188,6 @@ def set_transformer_early_exit_mode(model: EarlyExitModelMixin | PeftModelForCau
     )
 
     model.early_exit_mode = mode
-
-
-def get_base_module_idx(name: str) -> int | None:
-    split_by_dots = name.split('.')
-    if len(split_by_dots) < 2:
-        return None
-    is_layer = (split_by_dots[-2] == 'layers')
-    if is_layer:
-        layer_idx = int(split_by_dots[-1])
-        return layer_idx
-    else:
-        return None
 
 
 def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict, device: str = 'cuda') -> EarlyExitModelMixin:
@@ -216,11 +205,7 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
 
     for name, module in model.named_modules():
         
-        base_module_idx = get_base_module_idx(name)
-
-        if base_module_idx is None:
-            continue
-        if base_module_idx % 5 == 0:
+        if module_name_is_layer_base(name):
             augmented_type = generate_layer_type_with_early_exit_decision_head(base_type = type(module))
 
             # XXX: should be a more robust way to extract config and layer_idx
@@ -241,7 +226,7 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
 
             print(f'replacing layer {name}')
             exitable_layer_idx += 1
-        else:
+        elif module_name_is_transformer_layer(name):
             augmented_type = generate_layer_type_WITHOUT_early_exit_decision_head(base_type = type(module))
 
             # XXX: should be a more robust way to extract config and layer_idx
