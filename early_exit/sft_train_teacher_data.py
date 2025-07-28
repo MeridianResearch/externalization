@@ -24,7 +24,7 @@ model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"                    # ar
 model_config_path = "config_deepseek.yaml"                     # args.model_config_path
 #dataset_path = "results_and_data/early_exit_sft_dataset/test/data.csv"                  # args.dataset_path
 #prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config.json"                    # args.prompt_config_path
-teacher_data_path = "/workspace/data/teacher_generated_data_gzip_test/merged_teacher_data.pkl.gz"
+teacher_data_path = "/workspace/data/teacher_generated_data_gzip/merged_teacher_data.pkl.gz" #update location - on runpod moving to workspace allowed for more disc space
 batch_size = 1                    # args.batch_size -- might want to sort out batching, but increasing num_exit_samples might be better + less effort
 
 args = {
@@ -156,7 +156,7 @@ for epoch in range(num_epoch):
             log_dict = {
                 'epoch': epoch,
                 'batch_in_epoch': batch_ticker,
-                'prompt_idx': prompt_batch.idx[0],
+                'prompt_idx': prompt_idx,
                 'mean_logit_kl': mean_logit_kl.item(),
                 'mean_exit_logprob': mean_exit_logprob.item(),
                 'total_loss': total_loss.item(),
@@ -165,8 +165,15 @@ for epoch in range(num_epoch):
             # Probability of exiting, according to the teacher
             layer_mean_exit_probabilities = early_exit_probs.mean(0).mean(0)  # shape: [layers]
             log_dict.update({
-                f'layer_mean_exit_probabilities/layer_{model.exitable_layer_idxs[i]}': v.item() 
+                f'layer_mean_exit_probabilities_teacher/layer_{model.exitable_layer_idxs[i]}': v.item() 
                 for i, v in enumerate(layer_mean_exit_probabilities)
+            })
+
+            # Probability of exiting, according to the student
+            layer_mean_exit_probabilities_student = sft_student_early_exit_probs.mean(0).mean(0)  # shape: [layers]
+            log_dict.update({
+                f'layer_mean_exit_probabilities_student/layer_{model.exitable_layer_idxs[i]}': v.item() 
+                for i, v in enumerate(layer_mean_exit_probabilities_student)
             })
 
             # Empirical smapling rate of each layer exit option
@@ -182,5 +189,12 @@ for epoch in range(num_epoch):
                 for ei in range(len(model.exitable_layer_idxs))
             })
 
-            assert len(prompt_batch.idx) == 1, "Again, batch greater than 1 not allowed yet"
+            assert batch == 1, "Again, batch greater than 1 not allowed yet"
             wandb.log(log_dict)
+
+    print(f"\nEpoch {epoch+1} completed!")
+    print(f"Average Loss: {epoch_loss/total_batches:.6f}")
+    print(f"Average Logit KL: {epoch_logit_kl/total_batches:.6f}")
+    print(f"Average Exit LogProb: {epoch_exit_logprob/total_batches:.6f}")
+
+wandb.finish()
