@@ -144,8 +144,15 @@ for epoch in range(num_epoch):
             # Probability of exiting, according to the teacher
             layer_mean_exit_probabilities = early_exit_probs.mean(0).mean(0)  # shape: [layers]
             log_dict.update({
-                f'layer_mean_exit_probabilities/layer_{model.exitable_layer_idxs[i]}': v.item() 
+                f'layer_mean_exit_probabilities_teacher/layer_{model.exitable_layer_idxs[i]}': v.item() 
                 for i, v in enumerate(layer_mean_exit_probabilities)
+            })
+
+            # Probability of exiting, according to the student
+            layer_mean_exit_probabilities_student = sft_student_early_exit_probs.mean(0).mean(0)  # shape: [layers]
+            log_dict.update({
+                f'layer_mean_exit_probabilities_student/layer_{model.exitable_layer_idxs[i]}': v.item() 
+                for i, v in enumerate(layer_mean_exit_probabilities_student)
             })
 
             # Empirical smapling rate of each layer exit option
