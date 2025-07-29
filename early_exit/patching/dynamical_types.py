@@ -135,7 +135,7 @@ def generate_layer_type_with_early_exit_decision_head(base_type: Type[AutoModelF
     return DynamicallyTypedLayerWithExit
 
 
-def generate_layer_type_WITHOUT_early_exit_decision_head(base_type: Type[AutoModelForCausalLM]):
+def generate_layer_type_without_early_exit_decision_head(base_type: Type[AutoModelForCausalLM]):
     """
     Different Hugging Face transformer architectures have different types for their (macro-)layers,
         and these different types also have their own config types.

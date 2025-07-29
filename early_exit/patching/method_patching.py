@@ -11,7 +11,7 @@ logger = logging.get_logger(__name__)
 
 
 from early_exit.util import *
-from early_exit.patching.dynamical_types import generate_layer_type_with_early_exit_decision_head, generate_layer_type_WITHOUT_early_exit_decision_head, generate_model_type_with_early_exit_readout_head
+from early_exit.patching.dynamical_types import generate_layer_type_with_early_exit_decision_head, generate_layer_type_without_early_exit_decision_head, generate_model_type_with_early_exit_readout_head
 from early_exit.patching.attention_mixins.base import LayerFakeAttentionForwardMixin, possible_early_exit_types
 from early_exit.patching.model_mixins.base import EarlyExitModelMixin
 
@@ -227,7 +227,7 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
             print(f'replacing layer {name}')
             exitable_layer_idx += 1
         elif module_name_is_transformer_layer(name):
-            augmented_type = generate_layer_type_WITHOUT_early_exit_decision_head(base_type = type(module))
+            augmented_type = generate_layer_type_without_early_exit_decision_head(base_type = type(module))
 
             # XXX: should be a more robust way to extract config and layer_idx
             new_layer = augmented_type(
@@ -236,14 +236,12 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
                 exitable_layer_idx = exitable_layer_idx,
             )
 
-            exitable_layer_idxs.append(new_layer.layer_idx)
-
             load_state = new_layer.load_state_dict(module.state_dict(), strict=False)
 
             parent = dict(model.named_modules())[name.rsplit('.', 1)[0]]
             setattr(parent, name.rsplit('.', 1)[-1], new_layer.to(device = model.device, dtype=model.dtype))
 
-            print(f'replacing generate_layer_type_WITHOUT_early_exit_decision_head layer {name}')
+            print(f'replacing generate_layer_type_without_early_exit_decision_head layer {name}')
             
             
     model.base_model_forward = model.forward  # Keep original
