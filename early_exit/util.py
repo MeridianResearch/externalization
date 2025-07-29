@@ -22,6 +22,21 @@ def module_name_is_layer_base(name: str):
     else:
         return False
 
+def module_name_is_transformer_layer(name: str) -> bool:
+    """
+    Check if a module name corresponds to a transformer layer.
+    
+    Args:
+        name: Module name from model.named_modules()
+        
+    Returns:
+        bool: True if the module is a transformer layer, False otherwise
+    """
+    split_by_dots = name.split('.')
+    if len(split_by_dots) < 2:
+        return False
+    return split_by_dots[-2] == 'layers'
+
 
 @dataclass
 class ExitLogger:

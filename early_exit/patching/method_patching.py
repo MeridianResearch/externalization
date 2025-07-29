@@ -11,7 +11,7 @@ logger = logging.get_logger(__name__)
 
 
 from early_exit.util import *
-from early_exit.patching.dynamical_types import generate_layer_type_with_early_exit_decision_head, generate_model_type_with_early_exit_readout_head
+from early_exit.patching.dynamical_types import generate_layer_type_with_early_exit_decision_head, generate_layer_type_without_early_exit_decision_head, generate_model_type_with_early_exit_readout_head
 from early_exit.patching.attention_mixins.base import LayerFakeAttentionForwardMixin, possible_early_exit_types
 from early_exit.patching.model_mixins.base import EarlyExitModelMixin
 
@@ -98,7 +98,7 @@ def patched_forward_sft_student(self: EarlyExitModelMixin | PeftModelForCausalLM
     
     assert self.early_exit_mode == 'sft_student'
     for name, module in self.named_modules():
-        if module_name_is_layer_base(name):
+        if module_name_is_transformer_layer(name):
             assert module.early_exit_mode == 'sft_student'
             module.exit_state = exit_state
 
@@ -174,7 +174,7 @@ def set_transformer_early_exit_mode(model: EarlyExitModelMixin | PeftModelForCau
         model.eval()
 
     for name, module in model.named_modules():
-        if module_name_is_layer_base(name):
+        if module_name_is_transformer_layer(name):
             set_layer_early_exit_mode(module, mode)
             
 
@@ -187,7 +187,6 @@ def set_transformer_early_exit_mode(model: EarlyExitModelMixin | PeftModelForCau
     )
 
     model.early_exit_mode = mode
-
 
 
 def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict, device: str = 'cuda') -> EarlyExitModelMixin:
@@ -206,7 +205,7 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
     for name, module in model.named_modules():
 
         if module_name_is_layer_base(name):
-
+        
             augmented_type = generate_layer_type_with_early_exit_decision_head(base_type = type(module))
 
             # XXX: should be a more robust way to extract config and layer_idx
@@ -227,7 +226,24 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
 
             print(f'replacing layer {name}')
             exitable_layer_idx += 1
+        elif module_name_is_transformer_layer(name):
+            augmented_type = generate_layer_type_without_early_exit_decision_head(base_type = type(module))
 
+            # XXX: should be a more robust way to extract config and layer_idx
+            new_layer = augmented_type(
+                config = module.self_attn.config,
+                layer_idx = module.self_attn.layer_idx,
+                exitable_layer_idx = exitable_layer_idx,
+            )
+
+            load_state = new_layer.load_state_dict(module.state_dict(), strict=False)
+
+            parent = dict(model.named_modules())[name.rsplit('.', 1)[0]]
+            setattr(parent, name.rsplit('.', 1)[-1], new_layer.to(device = model.device, dtype=model.dtype))
+
+            print(f'replacing generate_layer_type_without_early_exit_decision_head layer {name}')
+            
+            
     model.base_model_forward = model.forward  # Keep original
     model.patched_forward_generation = MethodType(patched_forward_generation, model)
     model.patched_forward_sft_student = MethodType(patched_forward_sft_student, model)
