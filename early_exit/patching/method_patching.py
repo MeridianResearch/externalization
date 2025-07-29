@@ -174,7 +174,6 @@ def set_transformer_early_exit_mode(model: EarlyExitModelMixin | PeftModelForCau
         model.eval()
 
     for name, module in model.named_modules():
-        # compare_func = module_name_is_transformer_layer if mode in ['free_generate', 'sft_student'] else module_name_is_layer_base 
         if module_name_is_transformer_layer(name):
             set_layer_early_exit_mode(module, mode)
             
@@ -206,7 +205,7 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
     for name, module in model.named_modules():
 
         if module_name_is_layer_base(name):
-            
+        
             augmented_type = generate_layer_type_with_early_exit_decision_head(base_type = type(module))
 
             # XXX: should be a more robust way to extract config and layer_idx
