@@ -230,3 +230,6 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
             attn_weights = None
 
         return attn_output_with_zeros, attn_weights_with_zeros, past_key_value
+
+
+
