@@ -91,7 +91,7 @@ for epoch in range(num_epoch):
             early_output_log_probs = model.early_exit_hidden_state_readout(gathered_early_exit_hidden_states)               # [batch, num exitable layers, gen len, vocabulary]
             early_exit_probs = model.early_exit_target_probs(early_output_log_probs = early_output_log_probs, teacher_final_layer_log_probs = sft_teacher_final_layer_logprobs)
             repeated_sft_teacher_final_layer_logprobs = sft_teacher_final_layer_logprobs.repeat(num_exit_samples, 1, 1)     # XXX repeat_interleave? [batch * samples, full length, vocabulary]
-
+            sft_teacher_generated_tokens = sft_teacher_generated_tokens[:, :-1] # Removing the last token to match the log probs and hidden states shape
 
         # Sample early exits
         batch, gen_len, elayers = early_exit_probs.shape                                                                                                # [batch, generation length, exitable layers]
@@ -112,7 +112,7 @@ for epoch in range(num_epoch):
         eps = 1e-16
         sft_teacher_probs = sft_teacher_final_layer_logprobs.softmax(-1)                        # [batch * samples, gen len, vocabulary]
         # Intial version: sft_student_probs = sft_student_output_scores.logits[:,-gen_len:].softmax(-1)           # [batch * samples, gen len, vocabulary]
-        sft_student_probs = sft_student_output_scores.logits[:,-gen_len-1:-1].softmax(-1)       # [batch * samples, gen len, vocabulary]  
+        sft_student_probs = sft_student_output_scores.logits[:,-gen_len:].softmax(-1)       # [batch * samples, gen len, vocabulary]  
         token_logits_kl_div = (sft_student_probs * ((sft_student_probs + eps) / (sft_teacher_probs + eps)).log()).sum(-1)   # [batch * samples, gen len]
         mean_logit_kl = token_logits_kl_div.mean()
 
