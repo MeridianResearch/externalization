@@ -35,7 +35,7 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         _original_hidden_states = hidden_states.clone()
 
         bsz, q_len, _ = hidden_states.size()
-
+        
         if isinstance(unfrozen_idx_or_mask, list):
             unfrozen_elements = unfrozen_idx_or_mask
             
@@ -51,7 +51,7 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
 
         elif unfrozen_idx_or_mask is None:
             unfrozen_elements = torch.arange(bsz)
-
+        print("Padding required: ", padding_required)
         residual = hidden_states.clone()
 
         hidden_states[unfrozen_elements] = self.input_layernorm(hidden_states[unfrozen_elements])
