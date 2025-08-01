@@ -1,0 +1,11 @@
+.venv/*
+.venv311/*
+wandb/*
+# .gitignore
+run_sft_train.sh
+tests/.ipynb*
+*checkpoint*
+*cpython*
+tests/neat_test.ipynb
+shared_utils/*
+# tests/*
