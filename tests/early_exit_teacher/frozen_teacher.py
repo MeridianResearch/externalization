@@ -150,4 +150,4 @@ early_exit_layers = early_exit_layer_idxs.tolist()  # Convert tensor to list if 
 
 # Display the visualization
 display(visualize_tokens_by_exit_layer(tokens, layers, early_exit_layers, 
-                                     title="Early Exit Token Generation",  save_html="frozen_teacher_output.html"))
+                                     title="Early Exit Token Generation",  save_html="tests/early_exit_teacher/frozen_teacher_output.html"))
