@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Early Exit Token Generation</title>
+</head>
+<body>
+
+    <div style="font-family: Arial, sans-serif; margin: 20px; padding: 20px; 
+                background-color: #f9f9f9; border-radius: 10px;">
+        <h3 style="text-align: center; color: #333; margin-bottom: 20px;">Early Exit Token Generation</h3>
+        
+        <!-- Legend -->
+        <div style="display: flex; justify-content: center; gap: 15px; 
+                    margin: 20px 0; padding: 15px; background-color: #fff; 
+                    border-radius: 5px; flex-wrap: wrap; border: 1px solid #ddd;">
+    
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 25px; height: 15px; background-color: #b30326; 
+                                border: 1px solid #333; border-radius: 3px;"></div>
+                    <span style="font-size: 14px;">Final Layer</span>
+                </div>
+            
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 25px; height: 15px; background-color: #aac6fd; 
+                                border: 1px solid #333; border-radius: 3px;"></div>
+                    <span style="font-size: 14px;">Layer 15</span>
+                </div>
+            
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 25px; height: 15px; background-color: #6f91f2; 
+                                border: 1px solid #333; border-radius: 3px;"></div>
+                    <span style="font-size: 14px;">Layer 20</span>
+                </div>
+            
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 25px; height: 15px; background-color: #3a4cc0; 
+                                border: 1px solid #333; border-radius: 3px;"></div>
+                    <span style="font-size: 14px;">Layer 25</span>
+                </div>
+            
+        </div>
+        
+        <!-- Tokens -->
+        <div style="line-height: 2.5; word-wrap: break-word; padding: 15px; 
+                    background-color: #fff; border-radius: 5px; border: 1px solid #ddd;">
+    <span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;">Okay</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;">,</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> so</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> I</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> need</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #3a4cc0; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> to</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> explain</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> the</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #6f91f2; color: black; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> concept</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #aac6fd; color: black; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> of</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> recursion</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;">/random</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> expansion</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;">(exp</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> part</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> recursive</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> recursive</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> in</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> natural</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> algebra</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> e</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> e</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> e</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> recursive</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> back</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> complet</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> complet</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> back</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> back</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> back</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> back</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> back</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> back</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> course</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;">Exp</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> exponential</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;">E</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> e</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> e</span><span style="display: inline-block; padding: 4px 8px; margin: 2px; 
+                                      border-radius: 4px; border: 1px solid #666; 
+                                      font-family: monospace; font-size: 13px; 
+                                      background-color: #b30326; color: white; 
+                                      font-weight: bold; max-width: 200px; 
+                                      overflow-wrap: break-word; vertical-align: middle;"> e</span>
+        </div>
+        
+        <!-- Statistics -->
+        <div style="margin-top: 15px; padding: 10px; background-color: #e8f4fd; 
+                    border-radius: 5px; font-family: monospace; font-size: 13px;">
+    Total tokens: 40 | Final: 37 (92.5%) | Layer 15: 1 (2.5%) | Layer 20: 1 (2.5%) | Layer 25: 1 (2.5%)
+        </div>
+    </div>
+    
+</body>
+</html>
