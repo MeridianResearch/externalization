@@ -5,13 +5,21 @@ import matplotlib.colors as mcolors
 from IPython.display import HTML, display
 
 
+import os
+import html
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+from IPython.display import HTML, display
+
+
 def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
                              output_path='tests/prompt_based_kl_output.html'):
     """
     Create an HTML file with visualization of early exit behavior across different KL strengths.
     
     Args:
-        all_results: Dictionary with structure {kl_strength: {sentence_idx: (tokens, exit_layers, text)}}
+        all_results: Dictionary with structure {kl_strength: {sentence_idx: (tokens, exit_layers, text, kl_divs)}}
+                    Note: kl_divs is now expected as the 4th element of the tuple
         early_exit_layer_idxs: Tensor of available early exit layers
         test_prompts: List of test prompts
         output_path: Path to save the HTML file
@@ -121,6 +129,43 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
             max-width: 200px;
             overflow-wrap: break-word;
             vertical-align: middle;
+            cursor: pointer;
+            position: relative;
+        }
+        .token:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+        .token .tooltip {
+            visibility: hidden;
+            background-color: #333;
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 8px 12px;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            font-size: 12px;
+            font-weight: normal;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .token .tooltip::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+        .token:hover .tooltip {
+            visibility: visible;
         }
         .stats {
             margin: 15px 0;
@@ -210,14 +255,20 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
 """
                 continue
             
-            token_strings, exit_layers, _ = all_results[kl_strength][prompt_idx]
+            result_tuple = all_results[kl_strength][prompt_idx]
+            if len(result_tuple) == 4:
+                token_strings, exit_layers, _, kl_divs = result_tuple
+            else:
+                # Backward compatibility if kl_divs not provided
+                token_strings, exit_layers, _ = result_tuple
+                kl_divs = [None] * len(token_strings)
             
             # Display tokens
             html_content += """
             <div class="tokens-container">
 """
             
-            for token, exit_layer in zip(token_strings, exit_layers):
+            for i, (token, exit_layer) in enumerate(zip(token_strings, exit_layers)):
                 color = layer_colors[exit_layer]
                 # Escape special characters in token
                 token_display = html.escape(token).replace('\n', '\\n').replace('\t', '\\t')
@@ -227,7 +278,24 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
                 brightness = (r * 299 + g * 587 + b * 114) / 1000
                 text_color = "white" if brightness < 128 else "black"
                 
-                html_content += f"""<span class="token" style="background-color: {color}; color: {text_color};">{token_display}</span>"""
+                # Create tooltip content
+                layer_display = "Final Layer" if exit_layer == -1 else f"Layer {exit_layer}"
+                tooltip_content = f"Exit Layer: {layer_display}"
+                # tooltip_content = f"Exit Layer: {exit_layer}"
+                if kl_divs[i] is not None:
+                    # If we have KL divergence info for all layers
+                    if isinstance(kl_divs[i], (list, tuple)):
+                        tooltip_lines = [f"Layer {early_exit_layer_idxs[j].item()}: KL={kl:.3f}" 
+                                       for j, kl in enumerate(kl_divs[i]) if j < len(early_exit_layer_idxs)]
+                        tooltip_content = "<br>".join(tooltip_lines)
+                    else:
+                        # Single KL value for the chosen layer
+                        tooltip_content += f"<br>KL Divergence: {kl_divs[i]:.3f}"
+                
+                html_content += f"""<span class="token" style="background-color: {color}; color: {text_color};">
+                    {token_display}
+                    <span class="tooltip">{tooltip_content}</span>
+                </span>"""
             
             html_content += """
             </div>
