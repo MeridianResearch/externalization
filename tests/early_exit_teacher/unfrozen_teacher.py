@@ -15,9 +15,9 @@ import random
 from tests.early_exit_teacher.visualization import create_html_visualization
 
 # Set random seed for reproducibility
-random.seed(42)
-torch.manual_seed(42)
-np.random.seed(42)
+# random.seed(42)
+# torch.manual_seed(42)
+# np.random.seed(42)
 
 
 def generate_with_early_exit(model, tokenizer, prompt, system_prompt, prefiller, 
@@ -42,6 +42,7 @@ def generate_with_early_exit(model, tokenizer, prompt, system_prompt, prefiller,
     current_input = input_ids.clone()
     generated_tokens = []
     chosen_exit_layers = []
+    kl_divergences = []  # NEW: Store KL divergences
     
     for step in range(config['generation']['max_new_tokens']):
         with torch.no_grad():
@@ -75,7 +76,7 @@ def generate_with_early_exit(model, tokenizer, prompt, system_prompt, prefiller,
                     chosen_exit_layer = int(exit_layer.item())
                     break
             chosen_exit_layers.append(chosen_exit_layer)
-            
+            kl_divergences.append(kl_div[0, qdx].item() if chosen_exit_layer != -1 else None)
             # Sample next token
             next_token = torch.argmax(predictions, dim=-1).unsqueeze(-1)
             
@@ -91,7 +92,7 @@ def generate_with_early_exit(model, tokenizer, prompt, system_prompt, prefiller,
     token_strings = [tokenizer.decode([token], skip_special_tokens=False) for token in generated_tokens]
     generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
     
-    return token_strings, chosen_exit_layers, generated_text
+    return token_strings, chosen_exit_layers, generated_text, kl_divergences
 
 
 # Main execution
@@ -163,12 +164,12 @@ if __name__ == "__main__":
         for idx, prompt in enumerate(test_prompts):
             print(f"  Processing prompt {idx + 1}: '{prompt[:50]}...'")
             
-            token_strings, exit_layers, generated_text = generate_with_early_exit(
+            token_strings, exit_layers, generated_text, kl_divergences = generate_with_early_exit(
                 model, tokenizer, prompt, system_prompt, prefiller,
                 early_exit_layer_idxs, config, kl_strength, device
             )
             
-            all_results[kl_strength][idx] = (token_strings, exit_layers, prompt)
+            all_results[kl_strength][idx] = (token_strings, exit_layers, prompt, kl_divergences)
             
             # Print summary statistics
             total_tokens = len(token_strings)
