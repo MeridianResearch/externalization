@@ -1,0 +1,3121 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Early Exit Generation (Freezing MLP operations)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #444;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 10px;
+            margin-top: 40px;
+        }
+        h3 {
+            color: #666;
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            flex-wrap: wrap;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .legend-box {
+            width: 30px;
+            height: 20px;
+            border: 1px solid #333;
+            border-radius: 3px;
+        }
+        .tokens-container {
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #fafafa;
+            border-radius: 5px;
+            line-height: 2.2;
+            word-wrap: break-word;
+        }
+        .token {
+            display: inline-block;
+            padding: 4px 8px;
+            margin: 2px;
+            border-radius: 4px;
+            border: 1px solid #666;
+            font-family: monospace;
+            font-size: 14px;
+            color: white;
+            font-weight: bold;
+            max-width: 200px;
+            overflow-wrap: break-word;
+            vertical-align: middle;
+            cursor: pointer;
+            position: relative;
+        }
+        .token:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+        .token .tooltip {
+            visibility: hidden;
+            background-color: #333;
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 8px 12px;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            font-size: 12px;
+            font-weight: normal;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .token .tooltip::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+        .token:hover .tooltip {
+            visibility: visible;
+        }
+        .stats {
+            margin: 15px 0;
+            padding: 10px;
+            background-color: #e8f4fd;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .summary-table {
+            margin: 20px 0;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .summary-table th, .summary-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        .summary-table th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .summary-table tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .prompt-section {
+            margin-bottom: 50px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            background-color: #fdfdfd;
+        }
+        .no-data {
+            font-style: italic;
+            color: #999;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Early Exit Generation (Freezing MLP operations)</h1>
+        
+        <!-- Color Legend -->
+        <div class="legend">
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #b30326;"></div>
+                <span>Layer 0</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #e6745a;"></div>
+                <span>Layer 5</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #f6b79c;"></div>
+                <span>Layer 10</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #dcdcdd;"></div>
+                <span>Layer 15</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #aac6fd;"></div>
+                <span>Layer 20</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #6f91f2;"></div>
+                <span>Layer 25</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #3a4cc0;"></div>
+                <span>Final Layer</span>
+            </div>
+
+        </div>
+
+        <div class="prompt-section">
+            <h2>Prompt 1: "Explain the concept of recursion in programming."</h2>
+
+            <h3>KL Strength: 1</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Okay
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     need
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.002</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     explain
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     in
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.078</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     programming
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.002</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Hmm
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     concept
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     where
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     a
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.015</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     function
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.013</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     or
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     method
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     calls
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                     itself
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergence: 1.007</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     itself
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     That
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     means
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     repeats
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     until
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     certain
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     condition
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 2.033</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     or
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 1.257</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     base
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.498</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     case
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.007</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     is
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.493</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     met
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.172</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    .
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.339</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     \n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    Let
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     me
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.027</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     break
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     down
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     When
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     you
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     have
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     function
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     does
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     something
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.096</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     then
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.020</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     uses
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     same
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     function
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.002</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     again
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.600</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.093</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    .
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.021</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     like
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     for
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     example
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.324</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    ,
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 1.511</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     calculating
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     factorial
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.041</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.128</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     a
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.038</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     number
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     The
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     factorial
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.652</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     of
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     n
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.159</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     multiplied
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 1.660</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     by
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     the
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 3.810</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     factorial
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.001</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.318</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     n
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 1.407</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     So
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     if
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     write
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     a
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.657</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursive
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     function
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 1.034</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 1 (1.0%) | Layer 15: 5 (5.0%) | Layer 20: 5 (5.0%) | Layer 25: 26 (26.0%) | Final: 63 (63.0%)</div>
+
+            <h3>KL Strength: 4</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Okay
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     need
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.002</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     explain
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     in
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.078</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     programming
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.002</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Hmm
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     concept
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     where
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     a
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.015</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     function
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     calls
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     itself
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.010</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     repeatedly
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     until
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     base
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     case
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     reached
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    .
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.434</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     used
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     some
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     algorithms
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     like
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     binary
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     search
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     or
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Tower
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     of
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     H
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    anoi
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.001</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Let
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     me
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     think
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     about
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     how
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     works
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.126</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    When
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     function
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.162</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recurs
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     it
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.126</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     typically
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     has
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     base
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     case
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     stops
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.499</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.008</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     For
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     example
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.081</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     factorial
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     function
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.137</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     base
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.021</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     case
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.021</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     when
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     number
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    0
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     or
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.010</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     or
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    1
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.001</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     then
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     just
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 0 (0.0%) | Layer 15: 2 (2.0%) | Layer 20: 3 (3.0%) | Layer 25: 13 (13.0%) | Final: 82 (82.0%)</div>
+
+            <h3>KL Strength: 16</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Okay
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     need
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.002</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     explain
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     programming
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.002</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Hmm
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     concept
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     where
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     a
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.015</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     function
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.013</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     or
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     method
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     calls
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     itself
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.010</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     repeatedly
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     until
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     base
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     case
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     reached
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     That
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     makes
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     sense
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     because
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     like
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     solving
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     problem
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     by
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     breaking
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     it
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.014</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     into
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     smaller
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.011</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     parts
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     right
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ?
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     \n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    Let
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     me
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.018</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     think
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     about
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     how
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     works
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     When
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     you
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     have
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursive
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     function
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    ,
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.010</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     has
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     have
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     base
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     case
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     stops
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.033</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Without
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     base
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.021</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     case
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    ,
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.001</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     you
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;d
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     just
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     keep
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     calling
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     function
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     over
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     and
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.012</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     over
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.004</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     again
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     which
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     would
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     never
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     end
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 0 (0.0%) | Layer 15: 2 (2.0%) | Layer 20: 2 (2.0%) | Layer 25: 11 (11.0%) | Final: 85 (85.0%)</div>
+
+            <h3>Summary Statistics</h3>
+            <table class="summary-table">
+                <thead>
+                    <tr>
+                        <th>KL Strength</th>
+                        <th>Total Tokens</th>
+                        <th>Layer 0</th>
+                        <th>Layer 5</th>
+                        <th>Layer 10</th>
+                        <th>Layer 15</th>
+                        <th>Layer 20</th>
+                        <th>Layer 25</th>
+                        <th>Final</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>1 (1.0%)</td>
+                        <td>5 (5.0%)</td>
+                        <td>5 (5.0%)</td>
+                        <td>26 (26.0%)</td>
+                        <td>63 (63.0%)</td>
+                    </tr>
+                    <tr>
+                        <td>4</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>2 (2.0%)</td>
+                        <td>3 (3.0%)</td>
+                        <td>13 (13.0%)</td>
+                        <td>82 (82.0%)</td>
+                    </tr>
+                    <tr>
+                        <td>16</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>2 (2.0%)</td>
+                        <td>2 (2.0%)</td>
+                        <td>11 (11.0%)</td>
+                        <td>85 (85.0%)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="prompt-section">
+            <h2>Prompt 2: "How does gradient descent work in machine learning?"</h2>
+
+            <h3>KL Strength: 1</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Okay
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    ,
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.018</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     need
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 3.377</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     understand
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                     how
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergence: 0.422</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     gradient
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     descent
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     in
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.031</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     machine
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     learning
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.657</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     an
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     optimization
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.072</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     algorithm
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     but
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.986</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    &#x27;m
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.144</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     not
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     exactly
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     sure
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     how
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.893</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     it
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.175</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     works
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Let
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     me
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     try
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     break
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     it
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.083</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     down
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     step
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.977</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     from
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     what
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     I
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.018</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     know
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    First
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     think
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     used
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     minimize
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.275</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     some
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     cost
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     function
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Yeah
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    ,
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.926</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     makes
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     sense
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.001</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     because
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     machine
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.542</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     learning
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.505</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    ,
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.188</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     we
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 5.941</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     often
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     want
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     minimize
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     error
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.354</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     between
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     our
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     predictions
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 1.462</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     and
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     actual
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     data
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    .
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.376</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     So
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     goal
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     is
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 1.473</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.208</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     find
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     set
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.101</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     parameters
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     (
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    like
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 1.757</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     weights
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.239</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     and
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 1.171</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     biases
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.165</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    )
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     that
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.560</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 1 (1.0%) | Layer 15: 2 (2.0%) | Layer 20: 11 (11.0%) | Layer 25: 20 (20.0%) | Final: 66 (66.0%)</div>
+
+            <h3>KL Strength: 4</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Okay
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     need
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     understand
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     how
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.393</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     gradient
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     descent
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     works
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.031</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     in
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.011</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     machine
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.172</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     learning
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    .
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.043</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     gradient
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     descent
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.001</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     is
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.165</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     key
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     optimization
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     algorithm
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     used
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     training
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     models
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     especially
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     neural
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     networks
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.002</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     But
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;m
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     bit
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.004</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     fuzzy
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     on
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     details
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     let
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     me
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     try
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.001</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     break
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     down
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     step
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     by
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     step
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.425</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    First
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     think
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     about
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     minimizing
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     some
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     loss
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     function
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.069</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Loss
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     function
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     measure
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     of
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                     how
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergence: 0.587</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     error
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     exists
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     between
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.197</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     predicted
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     values
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     and
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.003</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     actual
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     actual
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     values
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     So
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     goal
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.036</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     iter
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    atively
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.003</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     update
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     model
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     parameters
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     minimize
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 1 (1.0%) | Layer 15: 1 (1.0%) | Layer 20: 3 (3.0%) | Layer 25: 16 (16.0%) | Final: 79 (79.0%)</div>
+
+            <h3>KL Strength: 16</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Okay
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    ,
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.018</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     need
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     understand
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     how
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     gradient
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     descent
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     works
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.031</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     in
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.011</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     machine
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.172</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     learning
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     an
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     optimization
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.027</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     algorithm
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     but
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    &#x27;m
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.041</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     not
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     exactly
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     sure
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     how
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     all
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     fits
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     together
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.021</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    .
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.029</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     think
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     used
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     minimize
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.117</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     some
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     cost
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     function
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     but
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;m
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     bit
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.016</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     fuzzy
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     on
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.001</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     details
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    First
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     should
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     probably
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     start
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     by
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recalling
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     what
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     cost
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     function
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.012</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     From
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     what
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     I
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.034</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     measure
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.108</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     how
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.064</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     error
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     exists
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     between
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     predicted
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     values
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.078</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     actual
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     data
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     So
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     goal
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.055</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     either
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 0 (0.0%) | Layer 15: 1 (1.0%) | Layer 20: 4 (4.0%) | Layer 25: 14 (14.0%) | Final: 81 (81.0%)</div>
+
+            <h3>Summary Statistics</h3>
+            <table class="summary-table">
+                <thead>
+                    <tr>
+                        <th>KL Strength</th>
+                        <th>Total Tokens</th>
+                        <th>Layer 0</th>
+                        <th>Layer 5</th>
+                        <th>Layer 10</th>
+                        <th>Layer 15</th>
+                        <th>Layer 20</th>
+                        <th>Layer 25</th>
+                        <th>Final</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>1 (1.0%)</td>
+                        <td>2 (2.0%)</td>
+                        <td>11 (11.0%)</td>
+                        <td>20 (20.0%)</td>
+                        <td>66 (66.0%)</td>
+                    </tr>
+                    <tr>
+                        <td>4</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>1 (1.0%)</td>
+                        <td>1 (1.0%)</td>
+                        <td>3 (3.0%)</td>
+                        <td>16 (16.0%)</td>
+                        <td>79 (79.0%)</td>
+                    </tr>
+                    <tr>
+                        <td>16</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>1 (1.0%)</td>
+                        <td>4 (4.0%)</td>
+                        <td>14 (14.0%)</td>
+                        <td>81 (81.0%)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="prompt-section">
+            <h2>Prompt 3: "What are the main causes of climate change?"</h2>
+
+            <h3>KL Strength: 1</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    &lt;/think&gt;
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    \n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    The
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     main
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     causes
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.142</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     climate
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.048</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     change
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     are
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     multif
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ac
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    eted
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.004</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     include
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     natural
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     factors
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     such
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     as
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     variations
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     Earth
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.994</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.005</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     climate
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     system
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.669</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     human
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     activities
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.380</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     like
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     burning
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.314</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     fossil
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.022</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                     fuels
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergence: 1.930</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    ,
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 1.442</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     release
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.008</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     CO
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    2
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     into
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     atmosphere
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.016</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     through
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     activities
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     such
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     as
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     industrial
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     processes
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     transportation
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Additionally
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     def
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    orestation
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     land
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    -use
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     changes
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.131</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     also
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     play
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     significant
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     role
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.008</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     altering
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     ecosystems
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     and
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.244</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     carbon
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     cycle
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.656</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Address
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #e6745a; color: black;">
+                    ing
+                    <span class="tooltip">Exit Layer: Layer 5<br>KL Divergence: 0.068</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     these
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     factors
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     crucial
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                     for
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergence: 2.577</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     understanding
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     and
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 3.370</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     ultimately
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     mitig
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    ating
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     effects
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.092</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     climate
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.175</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     change
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 92 | Layer 0: 0 (0.0%) | Layer 5: 1 (1.1%) | Layer 10: 2 (2.2%) | Layer 15: 4 (4.3%) | Layer 20: 2 (2.2%) | Layer 25: 16 (17.4%) | Final: 67 (72.8%)</div>
+
+            <h3>KL Strength: 4</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    &lt;/think&gt;
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    \n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    The
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     main
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     causes
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.142</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     climate
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.048</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     change
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     are
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     multif
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ac
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    eted
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.004</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     include
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     natural
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     factors
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     such
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     as
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     variations
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Earth
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.005</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     inherent
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     properties
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     human
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     activities
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     release
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.031</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     greenhouse
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     gases
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.040</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Here
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     are
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     key
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     points
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    :\n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    1
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     **
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.050</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    Natural
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Vari
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ations
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    **:
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     The
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Earth
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     climate
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     influenced
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     by
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.005</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     its
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     own
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     physical
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     characteristics
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     such
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     as
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.001</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     its
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     orbit
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     around
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Sun
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     tilt
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     of
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     its
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.012</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     axes
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     which
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     contribute
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.083</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     variations
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     weather
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     patterns
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    2
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     **
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     human
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Activities
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    **:
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.206</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     human
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     activities
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     including
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     burning
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     fossil
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.030</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     fuels
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.057</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     def
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 0 (0.0%) | Layer 15: 1 (1.0%) | Layer 20: 4 (4.0%) | Layer 25: 12 (12.0%) | Final: 83 (83.0%)</div>
+
+            <h3>KL Strength: 16</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    &lt;/think&gt;
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    \n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    The
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     main
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     causes
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.006</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     climate
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.048</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     change
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     are
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     multif
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ac
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    eted
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.004</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     include
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     natural
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     factors
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     such
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     as
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     variations
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Earth
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergence: 0.005</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     inherent
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     properties
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     human
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     activities
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     release
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.031</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     greenhouse
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     gases
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.040</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Here
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     are
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     key
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     points
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    :\n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    1
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     **
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.050</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    Natural
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Vari
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ations
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    **:
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     The
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Earth
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     climate
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     influenced
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     by
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.005</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     its
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     own
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     physical
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     characteristics
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     such
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     as
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.001</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     its
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     orbit
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     around
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Sun
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     tilt
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     of
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     its
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.012</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     axes
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     which
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     contribute
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.083</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     variations
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     weather
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     patterns
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    2
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     **
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.000</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     human
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Activities
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    **:
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     The
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     burning
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergence: 0.038</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     the
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergence: 0.046</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     fossil
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     fuels
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     (
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    carbon
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     dioxide
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     methane
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 0 (0.0%) | Layer 15: 1 (1.0%) | Layer 20: 4 (4.0%) | Layer 25: 10 (10.0%) | Final: 85 (85.0%)</div>
+
+            <h3>Summary Statistics</h3>
+            <table class="summary-table">
+                <thead>
+                    <tr>
+                        <th>KL Strength</th>
+                        <th>Total Tokens</th>
+                        <th>Layer 0</th>
+                        <th>Layer 5</th>
+                        <th>Layer 10</th>
+                        <th>Layer 15</th>
+                        <th>Layer 20</th>
+                        <th>Layer 25</th>
+                        <th>Final</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1</td>
+                        <td>92</td>
+                        <td>0 (0.0%)</td>
+                        <td>1 (1.1%)</td>
+                        <td>2 (2.2%)</td>
+                        <td>4 (4.3%)</td>
+                        <td>2 (2.2%)</td>
+                        <td>16 (17.4%)</td>
+                        <td>67 (72.8%)</td>
+                    </tr>
+                    <tr>
+                        <td>4</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>1 (1.0%)</td>
+                        <td>4 (4.0%)</td>
+                        <td>12 (12.0%)</td>
+                        <td>83 (83.0%)</td>
+                    </tr>
+                    <tr>
+                        <td>16</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>1 (1.0%)</td>
+                        <td>4 (4.0%)</td>
+                        <td>10 (10.0%)</td>
+                        <td>85 (85.0%)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+</body>
+</html>

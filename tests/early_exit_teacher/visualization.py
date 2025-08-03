@@ -13,7 +13,8 @@ from IPython.display import HTML, display
 
 
 def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
-                             output_path='tests/prompt_based_kl_output.html'):
+                             output_path='tests/prompt_based_kl_output.html',
+                             title='Early Exit Behavior Visualization'):
     """
     Create an HTML file with visualization of early exit behavior across different KL strengths.
     
@@ -23,6 +24,7 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
         early_exit_layer_idxs: Tensor of available early exit layers
         test_prompts: List of test prompts
         output_path: Path to save the HTML file
+        title: Custom title for the visualization (default: 'Early Exit Behavior Visualization')
     """
     
     # Create output directory if it doesn't exist
@@ -47,47 +49,50 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
     
     kl_strengths = sorted(all_results.keys())
     
+    # Escape the title for HTML and use it in both the page title and header
+    escaped_title = html.escape(title)
+    
     # Start building HTML
-    html_content = """
+    html_content = f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Early Exit Visualization</title>
+    <title>{escaped_title}</title>
     <style>
-        body {
+        body {{
             font-family: Arial, sans-serif;
             margin: 20px;
             background-color: #f5f5f5;
-        }
-        .container {
+        }}
+        .container {{
             max-width: 1400px;
             margin: 0 auto;
             background-color: white;
             padding: 20px;
             border-radius: 10px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-        h1 {
+        }}
+        h1 {{
             text-align: center;
             color: #333;
             margin-bottom: 30px;
-        }
-        h2 {
+        }}
+        h2 {{
             color: #444;
             border-bottom: 2px solid #ddd;
             padding-bottom: 10px;
             margin-top: 40px;
-        }
-        h3 {
+        }}
+        h3 {{
             color: #666;
             background-color: #f0f0f0;
             padding: 10px;
             border-radius: 5px;
             margin-top: 20px;
-        }
-        .legend {
+        }}
+        .legend {{
             display: flex;
             justify-content: center;
             gap: 20px;
@@ -96,27 +101,27 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
             background-color: #f9f9f9;
             border-radius: 5px;
             flex-wrap: wrap;
-        }
-        .legend-item {
+        }}
+        .legend-item {{
             display: flex;
             align-items: center;
             gap: 8px;
-        }
-        .legend-box {
+        }}
+        .legend-box {{
             width: 30px;
             height: 20px;
             border: 1px solid #333;
             border-radius: 3px;
-        }
-        .tokens-container {
+        }}
+        .tokens-container {{
             margin: 15px 0;
             padding: 15px;
             background-color: #fafafa;
             border-radius: 5px;
             line-height: 2.2;
             word-wrap: break-word;
-        }
-        .token {
+        }}
+        .token {{
             display: inline-block;
             padding: 4px 8px;
             margin: 2px;
@@ -131,13 +136,13 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
             vertical-align: middle;
             cursor: pointer;
             position: relative;
-        }
-        .token:hover {
+        }}
+        .token:hover {{
             transform: scale(1.05);
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
             z-index: 10;
-        }
-        .token .tooltip {
+        }}
+        .token .tooltip {{
             visibility: hidden;
             background-color: #333;
             color: #fff;
@@ -153,8 +158,8 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
             font-size: 12px;
             font-weight: normal;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        }
-        .token .tooltip::after {
+        }}
+        .token .tooltip::after {{
             content: "";
             position: absolute;
             top: 100%;
@@ -163,52 +168,52 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
             border-width: 5px;
             border-style: solid;
             border-color: #333 transparent transparent transparent;
-        }
-        .token:hover .tooltip {
+        }}
+        .token:hover .tooltip {{
             visibility: visible;
-        }
-        .stats {
+        }}
+        .stats {{
             margin: 15px 0;
             padding: 10px;
             background-color: #e8f4fd;
             border-radius: 5px;
             font-family: monospace;
             font-size: 13px;
-        }
-        .summary-table {
+        }}
+        .summary-table {{
             margin: 20px 0;
             border-collapse: collapse;
             width: 100%;
-        }
-        .summary-table th, .summary-table td {
+        }}
+        .summary-table th, .summary-table td {{
             border: 1px solid #ddd;
             padding: 8px;
             text-align: center;
-        }
-        .summary-table th {
+        }}
+        .summary-table th {{
             background-color: #4CAF50;
             color: white;
-        }
-        .summary-table tr:nth-child(even) {
+        }}
+        .summary-table tr:nth-child(even) {{
             background-color: #f2f2f2;
-        }
-        .prompt-section {
+        }}
+        .prompt-section {{
             margin-bottom: 50px;
             border: 1px solid #ddd;
             border-radius: 10px;
             padding: 20px;
             background-color: #fdfdfd;
-        }
-        .no-data {
+        }}
+        .no-data {{
             font-style: italic;
             color: #999;
             padding: 10px;
-        }
+        }}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Early Exit Behavior Visualization</h1>
+        <h1>{escaped_title}</h1>
         
         <!-- Color Legend -->
         <div class="legend">
