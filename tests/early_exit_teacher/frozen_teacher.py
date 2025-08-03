@@ -55,7 +55,7 @@ print(f"Early exit layer indices: {early_exit_layer_idxs}")
 print(f"Total exitable layers: {len(early_exit_layer_idxs)}")  # Subtract 1 for the inf
 
 
-config['generation']['max_new_tokens'] = 40
+config['generation']['max_new_tokens'] = 100
 # Define the test prompts
 test_prompts = [
     "Explain the concept of recursion in programming.",
@@ -181,7 +181,8 @@ create_html_visualization(
     all_results=all_results,
     early_exit_layer_idxs=early_exit_layer_idxs,
     test_prompts=test_prompts,
-    output_path='tests/early_exit_teacher/frozen_teacher_output.html'
+    title='Frozen MLP Teacher Early Exit Generation',
+    output_path='tests/early_exit_teacher/visualizations/frozen_mlp_teacher_output.html'
 )
 
 print("\n\nVisualization complete!")
