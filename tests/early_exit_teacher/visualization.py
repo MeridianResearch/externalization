@@ -31,7 +31,7 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     # Create color mapping
-    all_layers = list(early_exit_layer_idxs.numpy()) + [-1]  # -1 represents final layer
+    all_layers = list(early_exit_layer_idxs.numpy()) + [27]  # 27 represents final layer
     cmap = plt.colormaps.get_cmap('coolwarm_r')  # Blue to red
     norm = mcolors.Normalize(vmin=0, vmax=len(all_layers)-1)
     
@@ -214,14 +214,16 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
 <body>
     <div class="container">
         <h1>{escaped_title}</h1>
-        
+        <p style="text-align: center; color: #666; font-style: italic; margin-bottom: 30px;">
+            Token colors indicate the exit layer used for its generation.
+        </p>
         <!-- Color Legend -->
         <div class="legend">
 """
     
     # Add legend items
     for layer in all_layers:
-        layer_name = f"Layer {layer}" if layer != -1 else "Final Layer"
+        layer_name = f"Layer {layer}" if layer != 27 else "Final Layer"
         color = layer_colors[layer]
         # Determine text color based on background brightness
         r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
@@ -251,7 +253,7 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
         all_stats = {}
         for kl_strength in kl_strengths:
             html_content += f"""
-            <h3>KL Strength: {kl_strength}</h3>
+            <h3>{kl_strength}</h3>
 """
             
             if prompt_idx not in all_results[kl_strength]:
@@ -284,18 +286,26 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
                 text_color = "white" if brightness < 128 else "black"
                 
                 # Create tooltip content
-                layer_display = "Final Layer" if exit_layer == -1 else f"Layer {exit_layer}"
+                layer_display = "Final Layer" if exit_layer == 27 else f"Layer {exit_layer}"
                 tooltip_content = f"Exit Layer: {layer_display}"
-                # tooltip_content = f"Exit Layer: {exit_layer}"
-                if kl_divs[i] is not None:
-                    # If we have KL divergence info for all layers
-                    if isinstance(kl_divs[i], (list, tuple)):
-                        tooltip_lines = [f"Layer {early_exit_layer_idxs[j].item()}: KL={kl:.3f}" 
-                                       for j, kl in enumerate(kl_divs[i]) if j < len(early_exit_layer_idxs)]
+                
+                if i < len(kl_divs) and kl_divs[i] is not None:
+                    # Handle 1D tensor case - kl_divs[i] is a tensor of shape [num_layers]
+                    if hasattr(kl_divs[i], 'shape') and len(kl_divs[i].shape) == 1:
+                        # kl_divs[i] is already a 1D tensor with KL values for each layer
+                        tooltip_lines = [f"Exit Layer: {layer_display}"]
+                        tooltip_lines.append("KL Divergences:")
+                        for j, kl_val in enumerate(kl_divs[i]):
+                            if j < len(early_exit_layer_idxs):
+                                layer_idx = early_exit_layer_idxs[j].item()
+                                tooltip_lines.append(f"Layer {layer_idx}: {kl_val.item():.2f}")
                         tooltip_content = "<br>".join(tooltip_lines)
+                    elif hasattr(kl_divs[i], 'item'):
+                        # Single scalar tensor
+                        tooltip_content += f"<br>KL Divergence: {kl_divs[i].item():.2f}"
                     else:
-                        # Single KL value for the chosen layer
-                        tooltip_content += f"<br>KL Divergence: {kl_divs[i]:.3f}"
+                        # Fallback for other cases
+                        tooltip_content += f"<br>KL Divergence: {float(kl_divs[i]):.2f}"
                 
                 html_content += f"""<span class="token" style="background-color: {color}; color: {text_color};">
                     {token_display}
@@ -318,7 +328,7 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
             for layer in all_layers:
                 count = layer_counts[layer]
                 percentage = (count / len(exit_layers) * 100) if len(exit_layers) > 0 else 0
-                layer_name = f"Layer {layer}" if layer != -1 else "Final"
+                layer_name = f"Layer {layer}" if layer != 27 else "Final"
                 stats_text += f"{layer_name}: {count} ({percentage:.1f}%) | "
             
             html_content += f"""
@@ -331,12 +341,12 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
             <table class="summary-table">
                 <thead>
                     <tr>
-                        <th>KL Strength</th>
+                        <th>Mode</th>
                         <th>Total Tokens</th>
 """
         
         for layer in all_layers:
-            layer_name = f"Layer {layer}" if layer != -1 else "Final"
+            layer_name = f"Layer {layer}" if layer != 27 else "Final"
             html_content += f"""                        <th>{layer_name}</th>
 """
         
@@ -399,7 +409,7 @@ def visualize_tokens_by_exit_layer(token_strings, exit_layers, early_exit_layer_
     unique_layers = sorted(set(exit_layers))
     if early_exit_layer_idxs is not None:
         # Include all possible layers even if not used
-        all_layers = list(early_exit_layer_idxs) + [-1]  # -1 for final layer
+        all_layers = list(early_exit_layer_idxs) + [27]  # 27 for final layer
         unique_layers = sorted(set(all_layers))
     
     # Create color mapping using coolwarm colormap (blue to red)
@@ -432,7 +442,7 @@ def visualize_tokens_by_exit_layer(token_strings, exit_layers, early_exit_layer_
     # Add legend items
     for layer in unique_layers:
         if layer in [l for l in exit_layers]:  # Only show layers that are actually used
-            layer_name = f"Layer {layer}" if layer != -1 else "Final Layer"
+            layer_name = f"Layer {layer}" if layer != 27 else "Final Layer"
             color = layer_colors[layer]
             # Determine text color based on background brightness
             r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
@@ -492,7 +502,7 @@ def visualize_tokens_by_exit_layer(token_strings, exit_layers, early_exit_layer_
     stats_text = f"Total tokens: {len(token_strings)} | "
     for layer, count in layer_counts.items():
         percentage = (count / len(exit_layers) * 100) if len(exit_layers) > 0 else 0
-        layer_name = f"Layer {layer}" if layer != -1 else "Final"
+        layer_name = f"Layer {layer}" if layer != 27 else "Final"
         stats_text += f"{layer_name}: {count} ({percentage:.1f}%) | "
     
     html_content += stats_text.rstrip(' |')
