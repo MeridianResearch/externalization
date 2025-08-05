@@ -224,7 +224,7 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
             parent = dict(model.named_modules())[name.rsplit('.', 1)[0]]
             setattr(parent, name.rsplit('.', 1)[-1], new_layer.to(device = model.device, dtype=model.dtype))
 
-            print(f'replacing layer {name}')
+            # print(f'replacing layer {name}')
             exitable_layer_idx += 1
         elif module_name_is_transformer_layer(name):
             augmented_type = generate_layer_type_without_early_exit_decision_head(base_type = type(module))
@@ -241,7 +241,7 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
             parent = dict(model.named_modules())[name.rsplit('.', 1)[0]]
             setattr(parent, name.rsplit('.', 1)[-1], new_layer.to(device = model.device, dtype=model.dtype))
 
-            print(f'replacing generate_layer_type_without_early_exit_decision_head layer {name}')
+            # print(f'replacing generate_layer_type_without_early_exit_decision_head layer {name}')
             
             
     model.base_model_forward = model.forward  # Keep original
