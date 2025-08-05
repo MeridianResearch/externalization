@@ -133,7 +133,6 @@ class EarlyExitGenerator:
         eos_token_id: int
     ) -> GenerationResult:
         """Standard generation without early exit."""
-        # import ipdb; ipdb.set_trace()
         current_input = input_ids.clone()
         generated_tokens = []
         
@@ -154,9 +153,20 @@ class EarlyExitGenerator:
                 current_input = torch.cat([current_input, next_token], dim=1)
                 generated_tokens.append(next_token.item())
         
-        token_strings = [self.tokenizer.decode([t], skip_special_tokens=False) 
-                        for t in generated_tokens]
-        generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        token_strings = []
+        for t in generated_tokens:
+            try:
+                # Decode with error handling
+                token_str = self.tokenizer.decode([t], skip_special_tokens=False, clean_up_tokenization_spaces=False)
+                # Handle potential encoding issues
+                if not token_str or token_str == '':
+                    token_str = f'[TOKEN_{t}]'
+                token_strings.append(token_str)
+            except Exception as e:
+                # Fallback for problematic tokens
+                token_strings.append(f'[TOKEN_{t}]')
+        
+        generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False)
         
         return GenerationResult(
             generated_tokens=generated_tokens,
@@ -173,7 +183,6 @@ class EarlyExitGenerator:
         kl_factor: float = 1.0
     ) -> GenerationResult:
         """Generation with early exit but without freezing KV cache."""
-        # import ipdb; ipdb.set_trace()
         current_input = input_ids.clone()
         generated_tokens = []
         chosen_exit_layers = []
@@ -222,9 +231,20 @@ class EarlyExitGenerator:
                 if next_token.item() == eos_token_id:
                     break
     
-        token_strings = [self.tokenizer.decode([t], skip_special_tokens=False) 
-                        for t in generated_tokens]
-        generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        token_strings = []
+        for t in generated_tokens:
+            try:
+                # Decode with error handling
+                token_str = self.tokenizer.decode([t], skip_special_tokens=False, clean_up_tokenization_spaces=False)
+                # Handle potential encoding issues
+                if not token_str or token_str == '':
+                    token_str = f'[TOKEN_{t}]'
+                token_strings.append(token_str)
+            except Exception as e:
+                # Fallback for problematic tokens
+                token_strings.append(f'[TOKEN_{t}]')
+        
+        generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False)
         
         return GenerationResult(
             generated_tokens=generated_tokens,
@@ -302,9 +322,20 @@ class EarlyExitGenerator:
                 if next_token.item() == eos_token_id:
                     break
         
-        token_strings = [self.tokenizer.decode([t], skip_special_tokens=False) 
-                        for t in generated_tokens]
-        generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        token_strings = []
+        for t in generated_tokens:
+            try:
+                # Decode with error handling
+                token_str = self.tokenizer.decode([t], skip_special_tokens=False, clean_up_tokenization_spaces=False)
+                # Handle potential encoding issues
+                if not token_str or token_str == '':
+                    token_str = f'[TOKEN_{t}]'
+                token_strings.append(token_str)
+            except Exception as e:
+                # Fallback for problematic tokens
+                token_strings.append(f'[TOKEN_{t}]')
+        
+        generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False)
         
         return GenerationResult(
             generated_tokens=generated_tokens,
@@ -431,32 +462,46 @@ if __name__ == "__main__":
     ]
     system_prompt = "You are a helpful programming tutor."
     
-    # Test all modes
-    # modes = ['normal', 'unfrozen', 'frozen']
-    # kl_factors = [1.0, 4.0]
     max_new_tokens = 100
     modes = ['normal', 'unfrozen', 'frozen']
-    key_dict = {
-        'normal': '1. Normal Generation',
-        'unfrozen': '2. Early Exit',
-        'frozen': '3. Early Exit + Freeze KV Cache'}
-    kl_factors = [1.0]
-    all_results = {key_dict[mode]: {} for mode in modes}
-    for key_idx, mode in enumerate(modes):
+    mode_display_names = {
+        'normal': 'Normal Generation',
+        'unfrozen': 'Early Exit Without Freezing',
+        'frozen': 'Early Exit + Freeze KV Cache'
+    }
+    kl_factors = [1.0, 1.0]
+    
+    # Initialize all_results as list of lists
+    all_results = [[] for _ in range(len(test_prompts))]
+    
+    for mode in modes:
         print(f"\n{'='*60}")
         print(f"Mode: {mode.upper()}")
         print(f"{'='*60}")
-        key = key_dict[mode]
-        for prompt_idx, prompt in enumerate(test_prompts):  # Just test one prompt for demo
-            print(f"\nPrompt: {prompt}")            
+        
+        for prompt_idx, prompt in enumerate(test_prompts):
+            print(f"\nPrompt {prompt_idx + 1}: {prompt}")            
+            
             if mode == 'normal':
                 result = generator.generate(
                     prompt=prompt,
                     mode=mode,
                     max_new_tokens=max_new_tokens,
-                    system_prompt = system_prompt
+                    system_prompt=system_prompt
                 )
                 print(f"Generated: {result.generated_text}")
+                
+                # Add to results list
+                all_results[prompt_idx].append({
+                    'mode': mode_display_names[mode],
+                    'kl_strength': None,
+                    'data': (
+                        result.token_strings,
+                        result.chosen_exit_layers,
+                        result.generated_text,
+                        result.kl_divergences if result.kl_divergences else [None] * len(result.token_strings)
+                    )
+                })
             else:
                 for kl_factor in kl_factors:
                     print(f"\nKL Factor: {kl_factor}")
@@ -471,21 +516,19 @@ if __name__ == "__main__":
                     # Print results
                     print(f"Generated: {result.generated_text}")
                     
-                    # # Print statistics
-                    # stats = generator.get_exit_layer_statistics(result.chosen_exit_layers)
-                    # print("\nExit layer distribution:")
-                    # for layer, layer_stats in stats.items():
-                    #     # if layer_stats['count'] > 0:
-                    #     print(f"  {layer_stats['layer_name']}: "
-                    #             f"{layer_stats['count']} tokens "
-                    #             f"({layer_stats['percentage']:.1f}%)")
-                    # Store results in format expected by visualization
-            all_results[key][prompt_idx] = (
-                        result.token_strings,
-                        result.chosen_exit_layers,
-                        result.generated_text,
-                        result.kl_divergences if result.kl_divergences else [None] * len(result.token_strings)
-                    )
+                    # Add to results list
+                    all_results[prompt_idx].append({
+                        'mode': mode_display_names[mode],
+                        'kl_strength': kl_factor,
+                        'data': (
+                            result.token_strings,
+                            result.chosen_exit_layers,
+                            result.generated_text,
+                            result.kl_divergences if result.kl_divergences else [None] * len(result.token_strings)
+                        )
+                    })
+    
+    # Prepare data for visualization
     exit_layers_for_viz = []
     for i, layer in enumerate(generator.early_exit_layer_idxs):
         exit_layers_for_viz.append(layer.item())
@@ -497,4 +540,3 @@ if __name__ == "__main__":
         output_path='tests/early_exit_teacher/visualizations/early_exit_comparison.html',
         title='Early Exit Generation Modes Comparison'
     )
-            

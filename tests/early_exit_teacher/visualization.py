@@ -5,33 +5,43 @@ import matplotlib.colors as mcolors
 from IPython.display import HTML, display
 
 
-import os
-import html
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
-from IPython.display import HTML, display
-
-
 def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
                              output_path='tests/prompt_based_kl_output.html',
                              title='Early Exit Behavior Visualization'):
     """
-    Create an HTML file with visualization of early exit behavior across different KL strengths.
+    Create an HTML file with visualization of early exit behavior across different modes and KL strengths.
     
     Args:
-        all_results: Dictionary with structure {kl_strength: {sentence_idx: (tokens, exit_layers, text, kl_divs)}}
-                    Note: kl_divs is now expected as the 4th element of the tuple
+        all_results: List of lists structure where:
+                    all_results[prompt_idx] = [
+                        {
+                            'mode': str,
+                            'kl_strength': float or None,
+                            'data': (tokens, exit_layers, text, kl_divs)
+                        }, ...
+                    ]
         early_exit_layer_idxs: Tensor of available early exit layers
         test_prompts: List of test prompts
         output_path: Path to save the HTML file
-        title: Custom title for the visualization (default: 'Early Exit Behavior Visualization')
+        title: Custom title for the visualization
     """
     
     # Create output directory if it doesn't exist
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
-    # Create color mapping
-    all_layers = list(early_exit_layer_idxs.numpy()) + [27]  # 27 represents final layer
+    # Create color mapping - get the actual final layer index from the model
+    # Find the maximum layer index from the data to determine final layer
+    max_layer = 0
+    for prompt_results in all_results:
+        for result_item in prompt_results:
+            if result_item:  # Check if result_item exists
+                _, exit_layers, _, _ = result_item['data']
+                if exit_layers:
+                    max_layer = max(max_layer, max(exit_layers))
+    
+    all_layers = list(early_exit_layer_idxs.numpy()) + [max_layer]  # Use actual final layer
+    # Remove duplicates and sort
+    all_layers = sorted(list(set(all_layers)))
     cmap = plt.colormaps.get_cmap('coolwarm_r')  # Blue to red
     norm = mcolors.Normalize(vmin=0, vmax=len(all_layers)-1)
     
@@ -46,8 +56,6 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
             int(color[2] * 255)
         )
         layer_colors[layer] = hex_color
-    
-    kl_strengths = sorted(all_results.keys())
     
     # Escape the title for HTML and use it in both the page title and header
     escaped_title = html.escape(title)
@@ -204,6 +212,13 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
             padding: 20px;
             background-color: #fdfdfd;
         }}
+        .mode-section {{
+            margin-bottom: 30px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: #f8f9fa;
+        }}
         .no-data {{
             font-style: italic;
             color: #999;
@@ -223,7 +238,8 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
     
     # Add legend items
     for layer in all_layers:
-        layer_name = f"Layer {layer}" if layer != 27 else "Final Layer"
+        # Determine if this is the final layer (highest layer index)
+        layer_name = f"Layer {layer}" if layer != max(all_layers) else "Final Layer"
         color = layer_colors[layer]
         # Determine text color based on background brightness
         r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
@@ -249,36 +265,65 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
             <h2>Prompt {prompt_idx + 1}: "{escaped_prompt}"</h2>
 """
         
-        # Process each KL strength for this prompt
+        # Check if we have results for this prompt
+        if prompt_idx >= len(all_results) or not all_results[prompt_idx]:
+            html_content += """
+            <div class="no-data">No data available for this prompt</div>
+        </div>
+"""
+            continue
+        
+        # Process each mode/KL combination for this prompt
         all_stats = {}
-        for kl_strength in kl_strengths:
-            html_content += f"""
-            <h3>{kl_strength}</h3>
-"""
+        
+        # First pass: count occurrences of each base configuration
+        base_config_counts = {}
+        for result_item in all_results[prompt_idx]:
+            mode = result_item['mode']
+            kl_strength = result_item['kl_strength']
+            base_config = f"{mode} (KL: {kl_strength})" if kl_strength is not None else mode
+            base_config_counts[base_config] = base_config_counts.get(base_config, 0) + 1
+        
+        # Second pass: generate display names with generation numbers
+        config_counters = {}
+        for result_item in all_results[prompt_idx]:
+            mode = result_item['mode']
+            kl_strength = result_item['kl_strength']
+            token_strings, exit_layers, _, kl_divs = result_item['data']
             
-            if prompt_idx not in all_results[kl_strength]:
-                html_content += """
-            <div class="no-data">No data available</div>
-"""
-                continue
+            # Create base display name
+            base_config_name = f"{mode} (KL: {kl_strength})" if kl_strength is not None else mode
             
-            result_tuple = all_results[kl_strength][prompt_idx]
-            if len(result_tuple) == 4:
-                token_strings, exit_layers, _, kl_divs = result_tuple
+            # Generate unique display name
+            if base_config_counts[base_config_name] > 1:
+                # Multiple occurrences - add generation number
+                config_counters[base_config_name] = config_counters.get(base_config_name, 0) + 1
+                config_name = f"{base_config_name} - Sample {config_counters[base_config_name]}"
             else:
-                # Backward compatibility if kl_divs not provided
-                token_strings, exit_layers, _ = result_tuple
-                kl_divs = [None] * len(token_strings)
+                # Single occurrence - no generation number needed
+                config_name = base_config_name
+            
+            html_content += f"""
+            <div class="mode-section">
+                <h3>{config_name}</h3>
+"""
             
             # Display tokens
             html_content += """
-            <div class="tokens-container">
+                <div class="tokens-container">
 """
             
             for i, (token, exit_layer) in enumerate(zip(token_strings, exit_layers)):
                 color = layer_colors[exit_layer]
-                # Escape special characters in token
-                token_display = html.escape(token).replace('\n', '\\n').replace('\t', '\\t')
+                # Escape special characters in token and handle unicode properly
+                token_display = html.escape(token, quote=False)
+                # Replace common whitespace and control characters with visible representations
+                token_display = token_display.replace('\n', '\\n').replace('\t', '\\t').replace('\r', '\\r')
+                # Handle other special characters
+                token_display = token_display.replace('\u00a0', '[NBSP]')  # Non-breaking space
+                token_display = token_display.replace('\ufeff', '[BOM]')   # Byte order mark
+                # Replace any remaining non-printable characters
+                token_display = ''.join(char if char.isprintable() or char in ' \n\t' else f'[U+{ord(char):04X}]' for char in token_display)
                 
                 # Determine text color based on background
                 r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
@@ -286,7 +331,7 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
                 text_color = "white" if brightness < 128 else "black"
                 
                 # Create tooltip content
-                layer_display = "Final Layer" if exit_layer == 27 else f"Layer {exit_layer}"
+                layer_display = "Final Layer" if exit_layer == max(all_layers) else f"Layer {exit_layer}"
                 tooltip_content = f"Exit Layer: {layer_display}"
                 
                 if i < len(kl_divs) and kl_divs[i] is not None:
@@ -294,7 +339,7 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
                     if hasattr(kl_divs[i], 'shape') and len(kl_divs[i].shape) == 1:
                         # kl_divs[i] is already a 1D tensor with KL values for each layer
                         tooltip_lines = [f"Exit Layer: {layer_display}"]
-                        tooltip_lines.append("KL Divergences:")
+                        tooltip_lines.append("Exit Probs:")
                         for j, kl_val in enumerate(kl_divs[i]):
                             if j < len(early_exit_layer_idxs):
                                 layer_idx = early_exit_layer_idxs[j].item()
@@ -302,10 +347,10 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
                         tooltip_content = "<br>".join(tooltip_lines)
                     elif hasattr(kl_divs[i], 'item'):
                         # Single scalar tensor
-                        tooltip_content += f"<br>KL Divergence: {kl_divs[i].item():.2f}"
+                        tooltip_content += f"<br>Exit Probs: {kl_divs[i].item():.2f}"
                     else:
                         # Fallback for other cases
-                        tooltip_content += f"<br>KL Divergence: {float(kl_divs[i]):.2f}"
+                        tooltip_content += f"<br>Exit Probs: {float(kl_divs[i]):.2f}"
                 
                 html_content += f"""<span class="token" style="background-color: {color}; color: {text_color};">
                     {token_display}
@@ -313,7 +358,7 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
                 </span>"""
             
             html_content += """
-            </div>
+                </div>
 """
             
             # Statistics
@@ -322,17 +367,18 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
                 count = exit_layers.count(layer)
                 layer_counts[layer] = count
             
-            all_stats[kl_strength] = layer_counts
+            all_stats[config_name] = layer_counts
             
             stats_text = f"Total tokens: {len(token_strings)} | "
             for layer in all_layers:
                 count = layer_counts[layer]
                 percentage = (count / len(exit_layers) * 100) if len(exit_layers) > 0 else 0
-                layer_name = f"Layer {layer}" if layer != 27 else "Final"
+                layer_name = f"Layer {layer}" if layer != max(all_layers) else "Final"
                 stats_text += f"{layer_name}: {count} ({percentage:.1f}%) | "
             
             html_content += f"""
-            <div class="stats">{stats_text.rstrip(' |')}</div>
+                <div class="stats">{stats_text.rstrip(' |')}</div>
+            </div>
 """
         
         # Summary table for this prompt
@@ -341,12 +387,12 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
             <table class="summary-table">
                 <thead>
                     <tr>
-                        <th>Mode</th>
+                        <th>Configuration</th>
                         <th>Total Tokens</th>
 """
         
         for layer in all_layers:
-            layer_name = f"Layer {layer}" if layer != 27 else "Final"
+            layer_name = f"Layer {layer}" if layer != max(all_layers) else "Final"
             html_content += f"""                        <th>{layer_name}</th>
 """
         
@@ -355,20 +401,19 @@ def create_html_visualization(all_results, early_exit_layer_idxs, test_prompts,
                 <tbody>
 """
         
-        for kl_strength in kl_strengths:
-            if kl_strength in all_stats:
-                counts = all_stats[kl_strength]
-                total = sum(counts.values())
-                html_content += f"""                    <tr>
-                        <td>{kl_strength}</td>
+        for config_name in all_stats:
+            counts = all_stats[config_name]
+            total = sum(counts.values())
+            html_content += f"""                    <tr>
+                        <td>{config_name}</td>
                         <td>{total}</td>
 """
-                for layer in all_layers:
-                    count = counts.get(layer, 0)
-                    percentage = (count / total * 100) if total > 0 else 0
-                    html_content += f"""                        <td>{count} ({percentage:.1f}%)</td>
+            for layer in all_layers:
+                count = counts.get(layer, 0)
+                percentage = (count / total * 100) if total > 0 else 0
+                html_content += f"""                        <td>{count} ({percentage:.1f}%)</td>
 """
-                html_content += """                    </tr>
+            html_content += """                    </tr>
 """
         
         html_content += """                </tbody>
@@ -468,9 +513,18 @@ def visualize_tokens_by_exit_layer(token_strings, exit_layers, early_exit_layer_
     # Add tokens
     for token, exit_layer in zip(token_strings, exit_layers):
         color = layer_colors[exit_layer]
-        # Escape special characters
-        token_display = token.replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
-        token_display = token_display.replace('\n', '\\n').replace('\t', '\\t')
+    # Add tokens
+    for token, exit_layer in zip(token_strings, exit_layers):
+        color = layer_colors[exit_layer]
+        # Escape special characters and handle unicode properly
+        token_display = html.escape(token, quote=False)
+        # Replace common whitespace and control characters with visible representations
+        token_display = token_display.replace('\n', '\\n').replace('\t', '\\t').replace('\r', '\\r')
+        # Handle other special characters
+        token_display = token_display.replace('\u00a0', '[NBSP]')  # Non-breaking space
+        token_display = token_display.replace('\ufeff', '[BOM]')   # Byte order mark
+        # Replace any remaining non-printable characters
+        token_display = ''.join(char if char.isprintable() or char in ' \n\t' else f'[U+{ord(char):04X}]' for char in token_display)
         
         # Determine text color based on background brightness
         r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
