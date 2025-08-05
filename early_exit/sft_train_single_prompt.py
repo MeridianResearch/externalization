@@ -11,11 +11,11 @@ from shared_utils.generate import generate_text
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 
 import wandb
-
+WANDB = False
 
 # LOAD IN EXPERIMENT ARGS
 num_epoch = 1                     # args.num_epoch
-num_exit_samples = 4                  # args.num_exit_samples
+num_exit_samples = 1               # args.num_exit_samples
 device = "cuda"                    # args.device
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"                    # args.model_name
 model_config_path = "config_deepseek.yaml"                     # args.model_config_path
@@ -52,16 +52,16 @@ model.train()
 
 optimiser = Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-5)
 
-
-run = wandb.init(
-    # entity="cot-mrc",
-    project="early-exit",
-    config=dict(
-        **config,
-        args=args,
-        model_exitable_layers=model.exitable_layer_idxs.tolist()
+if WANDB:
+    run = wandb.init(
+        # entity="cot-mrc",
+        project="early-exit",
+        config=dict(
+            **config,
+            args=args,
+            model_exitable_layers=model.exitable_layer_idxs.tolist()
+        )
     )
-)
 
 
 
@@ -180,7 +180,7 @@ for epoch in range(num_epoch):
             })
 
             assert len(prompt_batch.idx) == 1, "Again, batch greater than 1 not allowed yet"
-            wandb.log(log_dict)
+            if WANDB: wandb.log(log_dict)
         
         # # Sample early exits
         # batch, gen_len, elayers = early_exit_probs.shape                                                                                                # [batch, generation length, exitable layers]
