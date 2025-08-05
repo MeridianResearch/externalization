@@ -1,9 +1,10 @@
 # Early Exit Visualization
 
-## No freezing
-This visualization shows the early exit behavior of the model with different KL strengths when sampling from early exiting but not committing to early exits ([visualization](https://htmlpreview.github.io/?https://github.com/MeridianResearch/externalization/blob/karthik/tests/early_exit_teacher/visualizations/unfrozen_teacher_output.html),[code](https://github.com/MeridianResearch/externalization/blob/karthik/tests/early_exit_teacher/unfrozen_teacher.py)) .
+The [visualization](https://htmlpreview.github.io/?https://github.com/MeridianResearch/externalization/blob/karthik/tests/early_exit_teacher/visualizations/early_exit_teacher_output.html) and [code](https://github.com/MeridianResearch/externalization/blob/karthik/tests/early_exit_teacher/modeling_exit.py) consists of three modes:
 
-## Committing to early exiting
-This visualization shows the early exit behavior of the model when sampling from early exiting and committing to early exits ([visualization](https://htmlpreview.github.io/?https://github.com/MeridianResearch/externalization/blob/karthik/tests/early_exit_teacher/visualizations/frozen_teacher_output.html),[code](https://github.com/MeridianResearch/externalization/blob/karthik/tests/early_exit_teacher/frozen_teacher.py)).
+1. Normal generation without early exiting
+2. Early exiting without freezing
+3. Early exiting after committing to early exiting
 
-The [generation](https://htmlpreview.github.io/?https://github.com/MeridianResearch/externalization/blob/karthik/tests/early_exit_teacher/visualizations/frozen_mlp_teacher_output.html) looks more interesting if we just freeze the MLP operations!! (Code is not pushed yet)
+### Fun fact
+I encountered an error in one of the runs because I didn’t clone the student and teacher caches separately, which led to the repeated token issue. A similar problem might be occurring in `patched_attention_forward()`, where we’re not cloning the `past_key_values`. Turns out the argument sent to `past_key_values` gets updated in-place.

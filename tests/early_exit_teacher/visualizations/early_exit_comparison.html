@@ -1,0 +1,2167 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Early Exit Generation Modes Comparison</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #444;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 10px;
+            margin-top: 40px;
+        }
+        h3 {
+            color: #666;
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            flex-wrap: wrap;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .legend-box {
+            width: 30px;
+            height: 20px;
+            border: 1px solid #333;
+            border-radius: 3px;
+        }
+        .tokens-container {
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #fafafa;
+            border-radius: 5px;
+            line-height: 2.2;
+            word-wrap: break-word;
+        }
+        .token {
+            display: inline-block;
+            padding: 4px 8px;
+            margin: 2px;
+            border-radius: 4px;
+            border: 1px solid #666;
+            font-family: monospace;
+            font-size: 14px;
+            color: white;
+            font-weight: bold;
+            max-width: 200px;
+            overflow-wrap: break-word;
+            vertical-align: middle;
+            cursor: pointer;
+            position: relative;
+        }
+        .token:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+        .token .tooltip {
+            visibility: hidden;
+            background-color: #333;
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 8px 12px;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            font-size: 12px;
+            font-weight: normal;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .token .tooltip::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+        .token:hover .tooltip {
+            visibility: visible;
+        }
+        .stats {
+            margin: 15px 0;
+            padding: 10px;
+            background-color: #e8f4fd;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .summary-table {
+            margin: 20px 0;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .summary-table th, .summary-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        .summary-table th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .summary-table tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .prompt-section {
+            margin-bottom: 50px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            background-color: #fdfdfd;
+        }
+        .no-data {
+            font-style: italic;
+            color: #999;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Early Exit Generation Modes Comparison</h1>
+        <p style="text-align: center; color: #666; font-style: italic; margin-bottom: 30px;">
+            Token colors indicate the exit layer used for its generation.
+        </p>
+        <!-- Color Legend -->
+        <div class="legend">
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #b30326;"></div>
+                <span>Layer 0</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #e6745a;"></div>
+                <span>Layer 5</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #f6b79c;"></div>
+                <span>Layer 10</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #dcdcdd;"></div>
+                <span>Layer 15</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #aac6fd;"></div>
+                <span>Layer 20</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #6f91f2;"></div>
+                <span>Layer 25</span>
+            </div>
+
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #3a4cc0;"></div>
+                <span>Final Layer</span>
+            </div>
+
+        </div>
+
+        <div class="prompt-section">
+            <h2>Prompt 1: "Explain the concept of recursion in programming."</h2>
+
+            <h3>1. Normal Generation</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Okay
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     need
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     explain
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     programming
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Hmm
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     term
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;ve
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     heard
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     before
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     but
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;m
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     not
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     entirely
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     sure
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     what
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     means
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Let
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     me
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     think
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     hearing
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     context
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     of
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     functions
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     or
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     maybe
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     math
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Oh
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     right
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     math
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     when
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     you
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     define
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     something
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     terms
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     of
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     itself
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Like
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     factorial
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     function
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     where
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    !
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     multiplied
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     by
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     (
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    -
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    1
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    )
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    !,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     on
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     until
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     you
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     get
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    1
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    !.
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     That
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     makes
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     sense
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    But
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 0 (0.0%) | Layer 15: 0 (0.0%) | Layer 20: 0 (0.0%) | Layer 25: 0 (0.0%) | Final: 100 (100.0%)</div>
+
+            <h3>2. Early Exit</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Okay
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.04</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.02</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.17</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     need
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.32<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     explain
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.03<br>Layer 25: 0.05</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.76</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     programming
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.01<br>Layer 25: 0.22</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Hmm
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     term
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.04</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;ve
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.02<br>Layer 10: 0.27<br>Layer 15: 0.25<br>Layer 20: 0.11<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     heard
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.81<br>Layer 25: 0.27</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     before
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     but
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.02<br>Layer 15: 0.49<br>Layer 20: 0.62<br>Layer 25: 0.76</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     I
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.16<br>Layer 25: 0.92</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                    &#x27;ve
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.21<br>Layer 10: 0.40<br>Layer 15: 0.11<br>Layer 20: 0.02<br>Layer 25: 0.64</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     never
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.16<br>Layer 25: 0.02</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     really
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.16<br>Layer 25: 0.09</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     understood
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     it
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.29</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     deeply
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.04</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Let
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     me
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.73</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     try
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.19</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.99</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     break
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.24</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     it
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.08<br>Layer 15: 0.02<br>Layer 20: 0.96<br>Layer 25: 0.96</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     down
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.03<br>Layer 15: 0.01<br>Layer 20: 0.87<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.01<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    First
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.30<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.20<br>Layer 25: 0.02</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     involves
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     functions
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.01<br>Layer 15: 0.01<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     calling
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     themselves
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.06<br>Layer 20: 0.28<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    .
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.09<br>Layer 15: 0.18<br>Layer 20: 0.56<br>Layer 25: 0.39</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     That
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.08<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     makes
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     sense
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.04<br>Layer 10: 0.62<br>Layer 15: 0.49<br>Layer 20: 0.38<br>Layer 25: 0.03</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     because
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.01<br>Layer 5: 0.02<br>Layer 10: 0.02<br>Layer 15: 0.01<br>Layer 20: 0.01<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     like
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     solving
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.08<br>Layer 10: 0.06<br>Layer 15: 0.53<br>Layer 20: 0.06<br>Layer 25: 0.91</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     problem
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.05<br>Layer 15: 0.01<br>Layer 20: 0.80<br>Layer 25: 0.79</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     without
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.27<br>Layer 25: 0.53</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     having
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.02<br>Layer 10: 0.10<br>Layer 15: 0.03<br>Layer 20: 0.00<br>Layer 25: 0.15</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     base
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.82</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     case
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.06<br>Layer 20: 0.06<br>Layer 25: 0.99</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.07<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     But
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     wait
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.04<br>Layer 15: 0.08<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     how
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     does
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.02<br>Layer 10: 0.04<br>Layer 15: 0.06<br>Layer 20: 0.68<br>Layer 25: 0.02</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.07</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     work
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.05</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     exactly
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                     how
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.02<br>Layer 15: 0.16<br>Layer 20: 0.60<br>Layer 25: 0.52</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ?
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Let
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     me
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.82</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     think
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.01<br>Layer 25: 0.77</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     of
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     an
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     example
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.05<br>Layer 20: 0.93<br>Layer 25: 0.91</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Maybe
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     factorial
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     function
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.01<br>Layer 20: 0.00<br>Layer 25: 0.75</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ?
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Yeah
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    Scroll
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.41<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                    ️
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.16<br>Layer 10: 0.36<br>Layer 15: 0.06<br>Layer 20: 0.30<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                    ’m
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.02<br>Layer 10: 0.05<br>Layer 15: 0.00<br>Layer 20: 0.06<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     trying
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.51</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Factor
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    ial
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.02<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.89</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 3 (3.0%) | Layer 15: 2 (2.0%) | Layer 20: 10 (10.0%) | Layer 25: 15 (15.0%) | Final: 70 (70.0%)</div>
+
+            <h3>3. Early Exit + Freeze KV Cache</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Okay
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.04</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.02</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     I
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.17</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     need
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.32<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     explain
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.03<br>Layer 25: 0.05</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     concept
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.08<br>Layer 20: 1.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.01<br>Layer 15: 0.06<br>Layer 20: 1.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     in
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.98</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     programming
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.15<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    .
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.02<br>Layer 25: 0.39</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Hmm
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.02<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     learning
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     about
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.01<br>Layer 20: 0.49<br>Layer 25: 0.33</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     my
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     computer
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.05</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     science
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.14<br>Layer 15: 0.24<br>Layer 20: 0.77<br>Layer 25: 0.86</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     class
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.81<br>Layer 25: 0.95</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     while
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     back
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.02<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.06</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Let
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     me
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.01<br>Layer 25: 0.66</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     try
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.05<br>Layer 25: 0.53</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     what
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.01<br>Layer 20: 0.01<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     learned
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    So
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    ,
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.40</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursion
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     method
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     used
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.64</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     math
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.04<br>Layer 15: 0.29<br>Layer 20: 0.00<br>Layer 25: 0.89</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    em
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.02<br>Layer 20: 0.06<br>Layer 25: 0.93</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    atically
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.10</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     programming
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     where
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.05</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     a
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.01<br>Layer 25: 0.67</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     function
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.86</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     or
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.34</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     method
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.03</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     calls
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.18</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     itself
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.56<br>Layer 15: 0.99<br>Layer 20: 1.00<br>Layer 25: 0.99</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     repeatedly
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.04<br>Layer 15: 0.00<br>Layer 20: 0.04<br>Layer 25: 0.02</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     until
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.02<br>Layer 15: 0.02<br>Layer 20: 0.62<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     a
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.96</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     certain
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.01<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     condition
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.64<br>Layer 20: 0.90<br>Layer 25: 0.87</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     is
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     met
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.07<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                    .
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.07<br>Layer 20: 0.12<br>Layer 25: 0.66</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     That
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     means
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     same
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.04<br>Layer 15: 0.07<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     function
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     called
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     multiple
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.02</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     times
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.24<br>Layer 10: 0.02<br>Layer 15: 0.00<br>Layer 20: 0.52<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     consec
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.06<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     succession
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.12<br>Layer 15: 0.10<br>Layer 20: 0.04<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     So
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     each
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     time
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.13</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     function
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.02<br>Layer 20: 0.00<br>Layer 25: 0.98</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     called
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.01<br>Layer 20: 0.00<br>Layer 25: 0.22</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    ,
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.03<br>Layer 15: 0.53<br>Layer 20: 0.97<br>Layer 25: 0.94</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                    递
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.04<br>Layer 20: 0.95<br>Layer 25: 0.82</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    归
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.15</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     function
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     calls
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                     itself
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.89<br>Layer 15: 0.97<br>Layer 20: 0.95<br>Layer 25: 0.89</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.02<br>Layer 10: 0.04<br>Layer 15: 0.02<br>Layer 20: 0.02<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     called
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     recursively
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     often
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.01<br>Layer 20: 0.61<br>Layer 25: 0.02</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 1 (1.0%) | Layer 15: 5 (5.0%) | Layer 20: 11 (11.0%) | Layer 25: 19 (19.0%) | Final: 64 (64.0%)</div>
+
+            <h3>Summary Statistics</h3>
+            <table class="summary-table">
+                <thead>
+                    <tr>
+                        <th>Mode</th>
+                        <th>Total Tokens</th>
+                        <th>Layer 0</th>
+                        <th>Layer 5</th>
+                        <th>Layer 10</th>
+                        <th>Layer 15</th>
+                        <th>Layer 20</th>
+                        <th>Layer 25</th>
+                        <th>Final</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1. Normal Generation</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>100 (100.0%)</td>
+                    </tr>
+                    <tr>
+                        <td>2. Early Exit</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>3 (3.0%)</td>
+                        <td>2 (2.0%)</td>
+                        <td>10 (10.0%)</td>
+                        <td>15 (15.0%)</td>
+                        <td>70 (70.0%)</td>
+                    </tr>
+                    <tr>
+                        <td>3. Early Exit + Freeze KV Cache</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>1 (1.0%)</td>
+                        <td>5 (5.0%)</td>
+                        <td>11 (11.0%)</td>
+                        <td>19 (19.0%)</td>
+                        <td>64 (64.0%)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="prompt-section">
+            <h2>Prompt 2: "What are the main causes of climate change?"</h2>
+
+            <h3>1. Normal Generation</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Alright
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     need
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     figure
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     out
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     main
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     causes
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     of
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     climate
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     change
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;m
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     not
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     entirely
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     sure
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     where
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     start
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     but
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     know
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     big
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     issue
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     affecting
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     planet
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Let
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     me
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     think
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     about
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     what
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;ve
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     heard
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     before
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    First
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     hearing
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     human
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     activities
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     are
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     big
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     factor
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Like
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     burning
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     fossil
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     fuels
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     def
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    orestation
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     must
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     be
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     important
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     But
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;m
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     not
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     sure
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     how
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     exactly
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     works
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Maybe
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     when
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     we
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     burn
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     fossil
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     fuels
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     we
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     release
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     carbon
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     dioxide
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     which
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     contributes
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     increase
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     atmospheric
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 0 (0.0%) | Layer 15: 0 (0.0%) | Layer 20: 0 (0.0%) | Layer 25: 0 (0.0%) | Final: 100 (100.0%)</div>
+
+            <h3>2. Early Exit</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Alright
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.12</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.36</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     need
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.06<br>Layer 25: 0.30</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     figure
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.54</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     out
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     the
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.84</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     main
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.01<br>Layer 20: 0.54<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     causes
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.62</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.03<br>Layer 15: 0.01<br>Layer 20: 0.99<br>Layer 25: 0.98</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     climate
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.01<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     change
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;m
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.01<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     not
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     entirely
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     understand
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.03<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.20<br>Layer 25: 0.93</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     what
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     climate
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     change
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     but
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.23<br>Layer 20: 0.45<br>Layer 25: 0.42</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.18</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     know
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.05<br>Layer 15: 0.16<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     it
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.05<br>Layer 20: 0.98<br>Layer 25: 0.96</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     related
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.01<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.01<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Earth
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.02</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.62<br>Layer 15: 0.97<br>Layer 20: 0.95<br>Layer 25: 0.92</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     climate
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     system
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.03<br>Layer 20: 0.01<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Let
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     me
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.92</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     start
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     by
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.94</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     thinking
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     about
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.02<br>Layer 10: 0.03<br>Layer 15: 0.05<br>Layer 20: 0.90<br>Layer 25: 0.88</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     what
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.01<br>Layer 20: 0.07<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     know
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.11<br>Layer 15: 0.19<br>Layer 20: 0.13<br>Layer 25: 0.02</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    First
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.23<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     hearing
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     climate
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     change
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.02<br>Layer 15: 0.01<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     big
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     issue
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.01<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     especially
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     with
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.04<br>Layer 15: 0.02<br>Layer 20: 0.01<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     melting
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     ice
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     rising
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.34</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     temperatures
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.10<br>Layer 25: 0.10</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    .
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.01<br>Layer 20: 0.83<br>Layer 25: 0.69</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     But
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;m
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.09<br>Layer 10: 0.34<br>Layer 15: 0.10<br>Layer 20: 0.00<br>Layer 25: 0.09</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     not
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.91</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     sure
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.02<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.06<br>Layer 25: 0.20</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     why
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.02<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     that
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     happens
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.05<br>Layer 15: 0.36<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    .
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.01<br>Layer 20: 0.97<br>Layer 25: 0.07</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Maybe
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.01<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.03<br>Layer 25: 0.07</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     has
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.08</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     something
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.01<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     do
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     with
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.60<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Earth
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.02<br>Layer 10: 0.81<br>Layer 15: 0.81<br>Layer 20: 0.70<br>Layer 25: 0.70</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     orbit
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ?
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.25</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     think
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.04<br>Layer 15: 0.19<br>Layer 20: 0.11<br>Layer 25: 0.45</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Earth
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.04</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     moving
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     freely
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.13<br>Layer 20: 0.19<br>Layer 25: 0.04</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     in
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     its
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.02</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 2 (2.0%) | Layer 15: 1 (1.0%) | Layer 20: 8 (8.0%) | Layer 25: 13 (13.0%) | Final: 76 (76.0%)</div>
+
+            <h3>3. Early Exit + Freeze KV Cache</h3>
+
+            <div class="tokens-container">
+<span class="token" style="background-color: #3a4cc0; color: white;">
+                    Alright
+                    <span class="tooltip">Exit Layer: Final Layer</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.12</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     so
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     I
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.36</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     need
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.06<br>Layer 25: 0.30</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     to
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     figure
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.54</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     out
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     the
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.84</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     main
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.01<br>Layer 20: 0.54<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     Contrib
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.62</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    uting
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.32</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Factors
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Climate
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Change
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     remember
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     from
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     school
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     that
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.04<br>Layer 25: 0.91</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     something
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     do
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     with
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     human
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     activities
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.78</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.37<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     but
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.02<br>Layer 15: 0.31<br>Layer 20: 0.67<br>Layer 25: 0.72</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     I
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.72</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                    &#x27;m
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.13<br>Layer 10: 0.52<br>Layer 15: 0.24<br>Layer 20: 0.00<br>Layer 25: 0.79</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     not
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.03</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     entirely
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     sure
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.10<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.09<br>Layer 25: 0.89</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     about
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     the
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     details
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.03<br>Layer 20: 0.07<br>Layer 25: 0.02</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.02<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     Let
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.10</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     me
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.85</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     think
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     through
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                    Scroll
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.04<br>Layer 15: 0.02<br>Layer 20: 0.10<br>Layer 25: 0.25</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     down
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.03<br>Layer 10: 0.05<br>Layer 15: 0.03<br>Layer 20: 0.01<br>Layer 25: 0.06</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     see
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     if
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.57</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     can
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.03<br>Layer 25: 0.90</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     piece
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     this
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.01<br>Layer 20: 0.14<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     together
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.83</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                    .\n\n
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.01<br>Layer 15: 0.01<br>Layer 20: 0.55<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    First
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.01<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.02<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.07</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     think
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.04<br>Layer 15: 0.02<br>Layer 20: 0.46<br>Layer 25: 0.02</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     it
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    &#x27;s
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     something
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     to
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     do
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     with
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.04</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     human
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     activities
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.01</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.06<br>Layer 15: 0.02<br>Layer 20: 0.04<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                    &#x27;ve
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.21<br>Layer 15: 0.20<br>Layer 20: 0.02<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     heard
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.08<br>Layer 15: 0.04<br>Layer 20: 0.85<br>Layer 25: 0.77</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     of
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     things
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.02<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     like
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.04<br>Layer 15: 0.13<br>Layer 20: 1.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     burning
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     fossil
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.60</span>
+                </span><span class="token" style="background-color: #f6b79c; color: black;">
+                    ized
+                    <span class="tooltip">Exit Layer: Layer 10<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.26<br>Layer 15: 0.03<br>Layer 20: 0.78<br>Layer 25: 0.99</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     trees
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.00<br>Layer 20: 0.02<br>Layer 25: 0.87</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     and
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.00<br>Layer 20: 0.03<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     burning
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     fossil
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #6f91f2; color: black;">
+                     fuels
+                    <span class="tooltip">Exit Layer: Layer 25<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.01<br>Layer 25: 0.93</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    .
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.04<br>Layer 15: 0.00<br>Layer 20: 0.14<br>Layer 25: 0.11</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     I
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     think
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.02<br>Layer 10: 0.08<br>Layer 15: 0.05<br>Layer 20: 0.01<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     burning
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     trees
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     releases
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #dcdcdd; color: black;">
+                     lot
+                    <span class="tooltip">Exit Layer: Layer 15<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.01<br>Layer 10: 0.02<br>Layer 15: 0.66<br>Layer 20: 0.88<br>Layer 25: 0.61</span>
+                </span><span class="token" style="background-color: #aac6fd; color: black;">
+                     of
+                    <span class="tooltip">Exit Layer: Layer 20<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.24<br>Layer 15: 0.15<br>Layer 20: 1.00<br>Layer 25: 1.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     CO
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    2
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                    ,
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     which
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.01<br>Layer 15: 0.28<br>Layer 20: 0.02<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     is
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.03<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     a
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.03</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     big
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.00<br>Layer 15: 0.00<br>Layer 20: 0.00<br>Layer 25: 0.00</span>
+                </span><span class="token" style="background-color: #3a4cc0; color: white;">
+                     part
+                    <span class="tooltip">Exit Layer: Final Layer<br>KL Divergences:<br>Layer 0: 0.00<br>Layer 5: 0.00<br>Layer 10: 0.02<br>Layer 15: 0.23<br>Layer 20: 0.06<br>Layer 25: 0.02</span>
+                </span>
+            </div>
+
+            <div class="stats">Total tokens: 100 | Layer 0: 0 (0.0%) | Layer 5: 0 (0.0%) | Layer 10: 2 (2.0%) | Layer 15: 3 (3.0%) | Layer 20: 6 (6.0%) | Layer 25: 16 (16.0%) | Final: 73 (73.0%)</div>
+
+            <h3>Summary Statistics</h3>
+            <table class="summary-table">
+                <thead>
+                    <tr>
+                        <th>Mode</th>
+                        <th>Total Tokens</th>
+                        <th>Layer 0</th>
+                        <th>Layer 5</th>
+                        <th>Layer 10</th>
+                        <th>Layer 15</th>
+                        <th>Layer 20</th>
+                        <th>Layer 25</th>
+                        <th>Final</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1. Normal Generation</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>100 (100.0%)</td>
+                    </tr>
+                    <tr>
+                        <td>2. Early Exit</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>2 (2.0%)</td>
+                        <td>1 (1.0%)</td>
+                        <td>8 (8.0%)</td>
+                        <td>13 (13.0%)</td>
+                        <td>76 (76.0%)</td>
+                    </tr>
+                    <tr>
+                        <td>3. Early Exit + Freeze KV Cache</td>
+                        <td>100</td>
+                        <td>0 (0.0%)</td>
+                        <td>0 (0.0%)</td>
+                        <td>2 (2.0%)</td>
+                        <td>3 (3.0%)</td>
+                        <td>6 (6.0%)</td>
+                        <td>16 (16.0%)</td>
+                        <td>73 (73.0%)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+</body>
+</html>
