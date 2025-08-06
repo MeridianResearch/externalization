@@ -8,7 +8,10 @@ from typing import Optional, List
 
 from transformers import AutoConfig, AutoModelForCausalLM, BitsAndBytesConfig
 
-
+from pathlib import Path
+import json
+from peft import PeftModel
+import wandb
 
 
 def module_name_is_layer_base(name: str):
@@ -19,6 +22,8 @@ def module_name_is_layer_base(name: str):
     if is_layer:
         layer_idx = int(split_by_dots[-1])
         return layer_idx % 5 == 0
+        #return layer_idx % 3 == 0
+        #return layer_idx >= 0
     else:
         return False
 
@@ -146,3 +151,33 @@ def get_model(model_name: str, model_config: dict, device: str):
         )
         
     return model.to(device)
+
+def save_model(model: PeftModel, save_path: str, upload_to_wandb: bool = True) -> None:
+
+    save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
+    
+    #save LoRA adapters
+    model.save_pretrained(save_path, save_embedding_layers=True)
+    
+    #save minimal metadata
+    metadata = {
+        "base_model_name": getattr(model.base_model.model.config, 'name_or_path', 'unknown'),
+        "exitable_layer_idxs": model.exitable_layer_idxs.tolist(),
+        "total_exitable_layers": model.total_exitable_layers,
+    }
+    
+    with open(save_path / "metadata.json", 'w') as f:
+        json.dump(metadata, f, indent=2, default=str)
+
+    if upload_to_wandb and wandb.run is not None:
+        artifact = wandb.Artifact(
+            name=f"early-exit-model-{wandb.run.id}",
+            type="model",
+            description="Early exit model with LoRA adapters"
+        )
+        artifact.add_dir(str(save_path))
+        wandb.log_artifact(artifact)
+        print("Model uploaded to WandB")
+    elif upload_to_wandb:
+        print("WandB run not active, skipping upload")

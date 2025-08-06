@@ -9,11 +9,12 @@ from torch.utils.data import DataLoader
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from shared_utils.generate import generate_text
 
-from early_exit.util import get_model
+from early_exit.util import get_model, save_model
 
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 
 import wandb
+from datetime import datetime
 
 
 # LOAD IN EXPERIMENT ARGS
@@ -24,8 +25,10 @@ model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"                    # ar
 model_config_path = "config_deepseek.yaml"                     # args.model_config_path
 #dataset_path = "results_and_data/early_exit_sft_dataset/test/data.csv"                  # args.dataset_path
 #prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config.json"                    # args.prompt_config_path
-teacher_data_path = "results_and_data/early_exit_sft_dataset/merged_teacher_data_sparse.pkl.gz" #update location - on runpod moving to workspace allowed for more disc space
+teacher_data_path = "/workspace/data/teacher_generated_data_gzip/merged_teacher_data_sparse.pkl.gz" #update location - on runpod moving to workspace allowed for more disc space
 batch_size = 1                    # args.batch_size -- might want to sort out batching, but increasing num_exit_samples might be better + less effort
+
+save_freq = 1000
 
 args = {
     'num_epoch': num_epoch,
@@ -60,6 +63,8 @@ def iter_merged_teacher_data(merged_path: str):
 # ENABLE EARLY EXITING
 model = replace_attention_layers(model, config['lora'], device)
 model.train()
+
+save_dir = f"models/early_exit_{datetime.now().strftime('%Y%m%d')}_layers_{model.total_exitable_layers}_big"
 
 optimiser = Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-5)
 
@@ -127,6 +132,7 @@ for epoch in range(num_epoch):
         ##rest is as is
 
             repeated_sft_teacher_final_layer_logprobs = sft_teacher_final_layer_logprobs.repeat(num_exit_samples, 1, 1)     # XXX repeat_interleave? [batch * samples, full length, vocabulary]
+            sft_teacher_generated_tokens = sft_teacher_generated_tokens[:, :-1] # Removing the last token to match the log probs and hidden states shape
 
 
         # Sample early exits
@@ -146,7 +152,8 @@ for epoch in range(num_epoch):
         print('CRUDE KL AND MAKE SURE PROBS ARE ALIGNED')
         eps = 1e-16
         sft_teacher_probs = sft_teacher_final_layer_logprobs.softmax(-1)                        # [batch * samples, gen len, vocabulary]
-        sft_student_probs = sft_student_output_scores.logits[:,-gen_len-1:-1].softmax(-1)           # [batch * samples, gen len, vocabulary]
+        #sft_student_probs = sft_student_output_scores.logits[:,-gen_len-1:-1].softmax(-1)           # [batch * samples, gen len, vocabulary]
+        sft_student_probs = sft_student_output_scores.logits[:,-gen_len:].softmax(-1)
         token_logits_kl_div = (sft_student_probs * ((sft_student_probs + eps) / (sft_teacher_probs + eps)).log()).sum(-1)   # [batch * samples, gen len]
         mean_logit_kl = token_logits_kl_div.mean()
 
@@ -205,6 +212,14 @@ for epoch in range(num_epoch):
             assert batch == 1, "Again, batch greater than 1 not allowed yet"
             wandb.log(log_dict)
 
+        if batch_ticker % save_freq == 0:
+            checkpoint_path = f"{save_dir}/step_{batch_ticker}"
+            save_model(model, checkpoint_path, upload_to_wandb=False)
+            print(f"Checkpoint saved to {checkpoint_path}")
+
     print(f"\nEpoch {epoch+1} completed!")
+
+print(f"Saving final model to {save_dir}...")
+save_model(model, save_dir)
 
 wandb.finish()
