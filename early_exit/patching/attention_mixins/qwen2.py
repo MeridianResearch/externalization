@@ -47,18 +47,18 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
                 input = unfrozen_idx_or_mask,
                 pad = (padding_required, 0),
                 value = True    # Pre-rollout (prompt) residual stream never gets frozen
-            )
+            ).to(hidden_states.device)
 
         elif unfrozen_idx_or_mask is None:
             unfrozen_elements = torch.arange(bsz)
 
         residual = hidden_states.clone()
 
-        hidden_states[unfrozen_elements] = self.input_layernorm(hidden_states[unfrozen_elements])
-
+        # hidden_states[unfrozen_elements] = self.input_layernorm(hidden_states[unfrozen_elements])
+        normed_hidden_states = self.input_layernorm(hidden_states)
         # Self Attention
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
-            hidden_states=hidden_states,
+            hidden_states=normed_hidden_states,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_value=past_key_value,
@@ -68,7 +68,7 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
             position_embeddings=position_embeddings,
             unfrozen_idx_or_mask=unfrozen_idx_or_mask       # Key change
         )
-        hidden_states = residual + hidden_states
+        hidden_states = torch.where(unfrozen_elements.unsqueeze(-1), residual + hidden_states, residual)
         
 
         # Fully Connected
