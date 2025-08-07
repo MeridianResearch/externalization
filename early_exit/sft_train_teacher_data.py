@@ -25,7 +25,8 @@ model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"                    # ar
 model_config_path = "config_deepseek.yaml"                     # args.model_config_path
 #dataset_path = "results_and_data/early_exit_sft_dataset/test/data.csv"                  # args.dataset_path
 #prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config.json"                    # args.prompt_config_path
-teacher_data_path = "/workspace/data/teacher_generated_data_gzip/merged_teacher_data_sparse.pkl.gz" #update location - on runpod moving to workspace allowed for more disc space
+# teacher_data_path = "/workspace/data/teacher_generated_data_gzip/merged_teacher_data_sparse.pkl.gz" #update location - on runpod moving to workspace allowed for more disc space
+teacher_data_path = "results_and_data/early_exit_sft_dataset/test/merged_teacher_data_sparse.pkl.gz" # maybe we can move to config?
 batch_size = 1                    # args.batch_size -- might want to sort out batching, but increasing num_exit_samples might be better + less effort
 
 save_freq = 1000
@@ -167,19 +168,25 @@ for epoch in range(num_epoch):
         total_loss = mean_logit_kl + mean_exit_logprob
         total_loss.backward()
         optimiser.step()
-
+        
+        early_exit_probs_repeated = early_exit_probs.repeat(num_exit_samples, 1, 1)
+        sampled_early_exit_layer_idxs_early_expanded = sampled_early_exit_layer_idxs_early.unsqueeze(-1).to(early_exit_probs_repeated.device)  
+        sampled_early_exit_probs = early_exit_probs_repeated.gather(dim=2, index=sampled_early_exit_layer_idxs_early_expanded)  
+        prob_diff = torch.abs(sampled_early_exit_probs - (sft_student_early_exit_probs).gather(index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2))  # [samples, batch, gen len, layers + 1]
+  
         torch.cuda.empty_cache()
 
         # Package and log
         with torch.no_grad():
 
             log_dict = {
-                'epoch': epoch,
+                # 'epoch': epoch,
                 'batch_in_epoch': batch_ticker,
                 'prompt_idx': prompt_idx,
                 'mean_logit_kl': mean_logit_kl.item(),
                 'mean_exit_logprob': mean_exit_logprob.item(),
                 'total_loss': total_loss.item(),
+                'sampled_exit_prob_diff': prob_diff.mean().item(),
             }
 
             # Probability of exiting, according to the teacher

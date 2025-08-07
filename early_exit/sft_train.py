@@ -126,19 +126,25 @@ for epoch in range(num_epoch):
         total_loss = mean_logit_kl + mean_exit_logprob
         total_loss.backward()
         optimiser.step()
-
+        
+        early_exit_probs_repeated = early_exit_probs.repeat(num_exit_samples, 1, 1)
+        sampled_early_exit_layer_idxs_early_expanded = sampled_early_exit_layer_idxs_early.unsqueeze(-1).to(early_exit_probs_repeated.device)  
+        sampled_early_exit_probs = early_exit_probs_repeated.gather(dim=2, index=sampled_early_exit_layer_idxs_early_expanded)  
+        prob_diff = torch.abs(sampled_early_exit_probs - (sft_student_early_exit_probs).gather(index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2))  # [samples, batch, gen len, layers + 1]
+        
         torch.cuda.empty_cache()
 
         # Package and log
         with torch.no_grad():
 
             log_dict = {
-                'epoch': epoch,
+                # 'epoch': epoch,
                 'batch_in_epoch': batch_ticker,
                 'prompt_idx': prompt_batch.idx[0],
                 'mean_logit_kl': mean_logit_kl.item(),
                 'mean_exit_logprob': mean_exit_logprob.item(),
                 'total_loss': total_loss.item(),
+                'sampled_exit_prob_diff': prob_diff.mean().item()
             }
 
             # Probability of exiting, according to the teacher
