@@ -21,6 +21,39 @@ from early_exit.patching import replace_attention_layers, set_transformer_early_
 import pandas as pd
 import numpy as np
 
+import sys
+from contextlib import contextmanager
+
+@contextmanager
+def trace_qwen2_calls():
+    """Trace all function calls from modeling_qwen2.py"""
+    
+    def trace_calls(frame, event, arg):
+        if event == 'call':
+            filename = frame.f_code.co_filename
+            function_name = frame.f_code.co_name
+            
+            # Filter for modeling_qwen2.py functions
+            if 'modeling_qwen2' in filename:
+                line_no = frame.f_lineno
+                print(f"🔍 {function_name}() @ line {line_no}")
+                
+                # Optional: print function arguments (be careful with large tensors)
+                local_vars = frame.f_locals
+                if 'self' in local_vars:
+                    class_name = local_vars['self'].__class__.__name__
+                    print(f"   └─ Class: {class_name}")
+                
+        return trace_calls
+    
+    old_trace = sys.gettrace()
+    sys.settrace(trace_calls)
+    try:
+        yield
+    finally:
+        sys.settrace(old_trace)
+
+
 
 # LOAD IN EXPERIMENT ARGS
 # num_epoch = 1                     # args.num_epoch
@@ -89,12 +122,24 @@ with torch.no_grad():
     
     
     set_transformer_early_exit_mode(model, 'sft_student')
-
     # Create prescribed exit layer idxs filled with torch.inf (always exit on last layer)
     batch_samples, seq_len = repeated_sft_teacher_generated_tokens.shape
     # print("Setting exit layers to inf for sft_student")
     # sampled_early_exit_layer_idxs = torch.full((batch_samples, gen_len), torch.inf, \
     #                                         device=repeated_sft_teacher_generated_tokens.device)
     # print(f"Minimum in prescribed_exit_layer_idxs = {torch.min(sampled_early_exit_layer_idxs)}")
-    sft_student_output_scores, collected_exit_logits = model(repeated_sft_teacher_generated_tokens,\
-                                                             prescribed_exit_layer_idxs=sampled_early_exit_layer_idxs)
+    # sft_student_output_scores, collected_exit_logits = model(repeated_sft_teacher_generated_tokens,\
+    #                                                          prescribed_exit_layer_idxs=sampled_early_exit_layer_idxs)
+    chosen_exit_layers_tensor = torch.inf * torch.ones([1,9])
+    # print("🚀 Starting model forward pass - tracing Qwen2 calls:")
+    # with trace_qwen2_calls():
+        # set_transformer_early_exit_mode(model, 'off')
+        # model_outputs = model(repeated_sft_teacher_generated_tokens, output_hidden_states = True)
+        # print("✅ Teacher Forward pass completed")
+    set_transformer_early_exit_mode(model, 'sft_student')
+    student_outputs = model(repeated_sft_teacher_generated_tokens, prescribed_exit_layer_idxs = chosen_exit_layers_tensor, output_hidden_states = True)    
+    student_hidden_states = student_outputs[0].hidden_states
+    
+    print("Output hidden states sum = ", student_hidden_states[1].sum().item())
+     
+    print("✅ Student Forward pass completed")
