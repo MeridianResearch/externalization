@@ -29,7 +29,7 @@ model_config_path = "config_deepseek.yaml"                     # args.model_conf
 teacher_data_path = "results_and_data/early_exit_sft_dataset/test/merged_teacher_data_sparse.pkl.gz" # maybe we can move to config?
 batch_size = 1                    # args.batch_size -- might want to sort out batching, but increasing num_exit_samples might be better + less effort
 
-save_freq = 1000
+save_freq = 250
 
 args = {
     'num_epoch': num_epoch,

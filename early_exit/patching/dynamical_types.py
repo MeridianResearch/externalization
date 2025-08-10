@@ -62,10 +62,18 @@ def generate_layer_type_with_early_exit_decision_head(base_type: Type[AutoModelF
 
                 readout_logits: _T = self.early_exit_decision_weights(unfrozen_hidden_states).squeeze(-1).squeeze(-1)       # [B_unfrozen]
 
-                raise NotImplementedError(header = 'make this stochastic!')
+                #raise NotImplementedError(header = 'make this stochastic!')
+                exit_probs = torch.sigmoid(readout_logits)  # [B_unfrozen]
+                min_threshold = 0.1
+                above_threshold_mask = exit_probs >= min_threshold
+                exit_decisions = torch.zeros_like(exit_probs, dtype=torch.bool)
+                if above_threshold_mask.any():
+                    exit_decisions[above_threshold_mask] = torch.bernoulli(exit_probs[above_threshold_mask]).bool()
+                #exit_decisions = torch.bernoulli(exit_probs).bool()  #stochastic sample
+                items_to_early_exit = unfrozen_batch_items[exit_decisions]
 
-                early_exit_decision_weights = (readout_logits >= 0.45)      # [B_unfrozen]
-                items_to_early_exit = unfrozen_batch_items[early_exit_decision_weights] # [B_to_exit]
+                #early_exit_decision_weights = (readout_logits >= 1.0)      # [B_unfrozen]
+                #items_to_early_exit = unfrozen_batch_items[early_exit_decision_weights] # [B_to_exit]
                 
                 self.exit_state.freeze_batch_item(
                     batch_idx = items_to_early_exit.tolist(),
