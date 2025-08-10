@@ -37,7 +37,11 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         bsz, q_len, _ = hidden_states.size()
 
         if isinstance(unfrozen_idx_or_mask, list):
-            unfrozen_elements = unfrozen_idx_or_mask
+            #unfrozen_elements = unfrozen_idx_or_mask
+            unfrozen_mask = torch.zeros(bsz, dtype=torch.bool, device=hidden_states.device)
+            if len(unfrozen_idx_or_mask) > 0:
+                unfrozen_mask[unfrozen_idx_or_mask] = True
+            unfrozen_elements = unfrozen_mask
             
         elif isinstance(unfrozen_idx_or_mask, _T):
             # XXX: CHECK MASK AND ATTENTION ALIGNMENT BY TIME
@@ -50,14 +54,15 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
             ).to(hidden_states.device)
 
         elif unfrozen_idx_or_mask is None:
-            unfrozen_elements = torch.arange(bsz)
+            #unfrozen_elements = torch.arange(bsz)
+            unfrozen_elements = torch.ones(bsz, dtype=torch.bool, device=hidden_states.device)
 
         residual = hidden_states.clone()
 
         # hidden_states[unfrozen_elements] = self.input_layernorm(hidden_states[unfrozen_elements])
         normed_hidden_states = self.input_layernorm(hidden_states)
         # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        attn_result = self.self_attn(
             hidden_states=normed_hidden_states,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -68,6 +73,15 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
             position_embeddings=position_embeddings,
             unfrozen_idx_or_mask=unfrozen_idx_or_mask       # Key change
         )
+
+        if len(attn_result) == 2:
+            hidden_states, self_attn_weights = attn_result
+            present_key_value = None
+        elif len(attn_result) == 3:
+            hidden_states, self_attn_weights, present_key_value = attn_result
+        else:
+            raise ValueError(f"Unexpected attention return format: {len(attn_result)} values")
+
         hidden_states = torch.where(unfrozen_elements.unsqueeze(-1), residual + hidden_states, residual)
         
 
@@ -111,7 +125,7 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
             hidden_states = residual + attn_outputs
         """
         if unfrozen_idx_or_mask is None:
-            return self.base_self_attn_forward(
+            base_result = self.base_self_attn_forward(
                 hidden_states = hidden_states,
                 attention_mask = attention_mask,
                 position_ids = position_ids,
@@ -121,6 +135,16 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
                 cache_position = cache_position,
                 position_embeddings = position_embeddings,
             )
+
+            if len(base_result) == 2:
+                attn_output, attn_weights = base_result
+                present_key_value = None
+            elif len(base_result) == 3:
+                attn_output, attn_weights, present_key_value = base_result
+            else:
+                raise ValueError(f"Unexpected base attention return format: {len(base_result)} values")
+                
+            return attn_output, attn_weights, present_key_value
 
         bsz, q_len, _ = hidden_states.size()
 

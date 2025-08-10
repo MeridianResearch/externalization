@@ -12,6 +12,7 @@ from pathlib import Path
 import json
 from peft import PeftModel
 import wandb
+import os
 
 
 def module_name_is_layer_base(name: str):
@@ -21,7 +22,7 @@ def module_name_is_layer_base(name: str):
     is_layer = (split_by_dots[-2] == 'layers')
     if is_layer:
         layer_idx = int(split_by_dots[-1])
-        return layer_idx % 5 == 0
+        return layer_idx % 5 == 0 and layer_idx > 0
         #return layer_idx % 3 == 0
         #return layer_idx >= 0
     else:
@@ -153,18 +154,27 @@ def get_model(model_name: str, model_config: dict, device: str):
     return model.to(device)
 
 def save_model(model: PeftModel, save_path: str, upload_to_wandb: bool = True) -> None:
-
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
     
     #save LoRA adapters
     model.save_pretrained(save_path, save_embedding_layers=True)
     
-    #save minimal metadata
+    #save early exit decision weights
+    probe_weights = {}
+    for name, module in model.named_modules():
+        if hasattr(module, 'early_exit_decision_weights'):
+            probe_weights[name] = module.early_exit_decision_weights.state_dict()
+    
+    if probe_weights:
+        torch.save(probe_weights, save_path / "early_exit_probes.pt")
+    
+    # Save metadata
     metadata = {
         "base_model_name": getattr(model.base_model.model.config, 'name_or_path', 'unknown'),
         "exitable_layer_idxs": model.exitable_layer_idxs.tolist(),
         "total_exitable_layers": model.total_exitable_layers,
+        "has_early_exit_probes": len(probe_weights) > 0
     }
     
     with open(save_path / "metadata.json", 'w') as f:
@@ -181,3 +191,23 @@ def save_model(model: PeftModel, save_path: str, upload_to_wandb: bool = True) -
         print("Model uploaded to WandB")
     elif upload_to_wandb:
         print("WandB run not active, skipping upload")
+
+def load_model(model, model_path):
+    adapter_path = os.path.join(model_path, "early_exiter")
+    if os.path.exists(os.path.join(adapter_path, "adapter_config.json")):
+        model.load_adapter(adapter_path, "early_exiter")
+        model.set_adapter("early_exiter")
+    else:
+        model.load_state_dict(torch.load(os.path.join(model_path, "pytorch_model.bin"), map_location=model.device))
+    
+    #early exit probe weights
+    probe_weights_path = os.path.join(model_path, "early_exit_probes.pt")
+    if os.path.exists(probe_weights_path):
+        probe_weights = torch.load(probe_weights_path, map_location=model.device)
+        loaded_probes = 0
+        for name, module in model.named_modules():
+            if name in probe_weights and hasattr(module, 'early_exit_decision_weights'):
+                module.early_exit_decision_weights.load_state_dict(probe_weights[name])
+                loaded_probes += 1
+    
+    return model

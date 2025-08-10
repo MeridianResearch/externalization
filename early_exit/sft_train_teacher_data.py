@@ -28,7 +28,7 @@ model_config_path = "config_deepseek.yaml"                     # args.model_conf
 teacher_data_path = "/workspace/data/teacher_generated_data_gzip/merged_teacher_data_sparse.pkl.gz" #update location - on runpod moving to workspace allowed for more disc space
 batch_size = 1                    # args.batch_size -- might want to sort out batching, but increasing num_exit_samples might be better + less effort
 
-save_freq = 1000
+save_freq = 250
 
 args = {
     'num_epoch': num_epoch,
