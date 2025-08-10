@@ -37,11 +37,11 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         bsz, q_len, _ = hidden_states.size()
 
         if isinstance(unfrozen_idx_or_mask, list):
-            #unfrozen_elements = unfrozen_idx_or_mask
-            unfrozen_mask = torch.zeros(bsz, dtype=torch.bool, device=hidden_states.device)
-            if len(unfrozen_idx_or_mask) > 0:
-                unfrozen_mask[unfrozen_idx_or_mask] = True
-            unfrozen_elements = unfrozen_mask
+            unfrozen_elements = unfrozen_idx_or_mask
+            #unfrozen_mask = torch.zeros(bsz, dtype=torch.bool, device=hidden_states.device)
+            #if len(unfrozen_idx_or_mask) > 0:
+            #    unfrozen_mask[unfrozen_idx_or_mask] = True
+            #unfrozen_elements = unfrozen_mask
             
         elif isinstance(unfrozen_idx_or_mask, _T):
             # XXX: CHECK MASK AND ATTENTION ALIGNMENT BY TIME
@@ -54,8 +54,8 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
             ).to(hidden_states.device)
 
         elif unfrozen_idx_or_mask is None:
-            #unfrozen_elements = torch.arange(bsz)
-            unfrozen_elements = torch.ones(bsz, dtype=torch.bool, device=hidden_states.device)
+            unfrozen_elements = torch.arange(bsz)
+            #unfrozen_elements = torch.ones(bsz, dtype=torch.bool, device=hidden_states.device)
 
         residual = hidden_states.clone()
 
