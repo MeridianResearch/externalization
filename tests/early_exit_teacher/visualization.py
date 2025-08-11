@@ -587,3 +587,30 @@ def visualize_tokens_by_exit_layer(token_strings, exit_layers, early_exit_layer_
         return HTML(html_content)
     else:
         return HTML(html_content)
+    
+def safe_decode_tokens(tokenizer, token_ids):
+    tokens = []
+    for tid in token_ids:
+        tok = tokenizer.decode([tid], skip_special_tokens=False)
+        
+        # Ensure it's a string
+        if not isinstance(tok, str):
+            tok = str(tok)
+
+        # Replace empty strings or pure whitespace with visible placeholder
+        if tok.strip() == "":
+            tok = f"[U+{tid}]"
+
+        # Escape HTML special chars
+        tok = html.escape(tok, quote=False)
+
+        # Replace control/non-printable chars with visible representations
+        tok = tok.replace("\n", "\\n").replace("\t", "\\t").replace("\r", "\\r")
+        tok = tok.replace("\u00a0", "[NBSP]").replace("\ufeff", "[BOM]")
+        tok = ''.join(
+            c if c.isprintable() or c in ' \n\t'
+            else f"[U+{ord(c):04X}]" for c in tok
+        )
+
+        tokens.append(tok)
+    return tokens
