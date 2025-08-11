@@ -18,9 +18,9 @@ from datetime import datetime
 
 
 # LOAD IN EXPERIMENT ARGS
-num_epoch = 1                     # args.num_epoch
-num_exit_samples = 4                  # args.num_exit_samples
-device = "cuda"                    # args.device
+num_epoch = 4                     # args.num_epoch
+num_exit_samples = 4              # args.num_exit_samples
+device = "cuda"                   # args.device
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"                    # args.model_name
 model_config_path = "config_deepseek.yaml"                     # args.model_config_path
 #dataset_path = "results_and_data/early_exit_sft_dataset/test/data.csv"                  # args.dataset_path
@@ -150,7 +150,7 @@ for epoch in range(num_epoch):
         sft_student_output_scores, collected_exit_logits = model(repeated_sft_teacher_generated_tokens, prescribed_exit_layer_idxs = sampled_early_exit_layer_idxs) # [batch * samples, full length, vocabulary]
 
         # Get KL divergences of the outputs
-        print('CRUDE KL AND MAKE SURE PROBS ARE ALIGNED')
+        # print('CRUDE KL AND MAKE SURE PROBS ARE ALIGNED')
         eps = 1e-16
         sft_teacher_probs = sft_teacher_final_layer_logprobs.softmax(-1)                        # [batch * samples, gen len, vocabulary]
         #sft_student_probs = sft_student_output_scores.logits[:,-gen_len-1:-1].softmax(-1)           # [batch * samples, gen len, vocabulary]
@@ -159,7 +159,7 @@ for epoch in range(num_epoch):
         mean_logit_kl = token_logits_kl_div.mean()
 
         # Get KL divergences of early exit preds
-        print('CRUDE KL AND MAKE SURE PROBS ARE ALIGNED AGAIN')
+        # print('CRUDE KL AND MAKE SURE PROBS ARE ALIGNED AGAIN')
         eps = 1e-16
         sft_student_early_exit_probs = model.early_exit_student_probs(collected_exit_logits)            # [batch, gen len, layers + 1]
         mean_exit_logprob = - (sft_student_early_exit_probs + 1e-16).gather(index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).log().mean()  # [batch, gen len, 1] -> scalar
