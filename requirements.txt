@@ -3,3 +3,4 @@ peft
 pandas
 bitsandbytes
 wandb
+inspect_ai

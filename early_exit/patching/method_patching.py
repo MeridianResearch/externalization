@@ -30,8 +30,8 @@ def patched_forward_generation(self: EarlyExitModelMixin | PeftModelForCausalLM,
 
     assert self.early_exit_mode == 'free_generate'
     for name, module in self.named_modules():
-        if module_name_is_layer_base(name):
-            print("Free generate: Patched forward generation called at ", name)
+        if module_name_is_transformer_layer(name):
+            #print("Free generate: Patched forward generation called at ", name)
             assert module.early_exit_mode == 'free_generate'
             module.exit_state = exit_state
 
