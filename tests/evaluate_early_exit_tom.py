@@ -3,9 +3,11 @@ import sys
 import os
 import argparse
 from typing import List, Dict, Any
+from torch.utils.data import DataLoader
 
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from shared_utils.generate import generate_text
+from shared_utils.data import CSVPromptDataset
 from early_exit.util import get_model, load_model
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 
@@ -20,17 +22,13 @@ config_path = "config_deepseek.yaml"
 device = "cuda"
 model_path = "models/early_exit_20250811_layers_5_lora32/step_2000"
 
-test_prompts = [
-    "Explain the concept of recursion in programming.",
-    "Explain what object-oriented programming means using a simple example.",
-    "How do neural networks learn from data?",
-    "Write a simple Python function to calculate factorial and explain how it works.",
-    "Describe the benefits of using version control systems like Git.",
-    "What are the key differences between supervised and unsupervised learning?",
-    "Describe how HTTP works and what happens when you visit a website."
-]
+dataset_path = "results_and_data/early_exit_sft_dataset/test/validation.csv"
+prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config.json"
+batch_size=1
 
-system_prompt = "You are a helpful programming tutor."
+dataset = CSVPromptDataset(dataset_path, prompt_config_path)
+dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=dataset.collate_fn, shuffle=False)
+
 
 tokenizer = get_tokenizer(base_model_name)
 config = configs_from_yaml(config_path, tokenizer.eos_token_id)
@@ -43,15 +41,20 @@ set_transformer_early_exit_mode(model, 'free_generate')
 #set_transformer_early_exit_mode(model, 'sft_teacher')
 
 samples = []
+max_samples = 10
 
-for i, prompt in enumerate(test_prompts):
+for i, prompt_batch in enumerate(dataloader):
+    if len(samples) >= max_samples:
+        break
+
+    prompt = prompt_batch.full_user_prompt
     
     with torch.no_grad():
         response, exit_info = generate_text(
             model=model,
             prompt=prompt,
-            system_prompt=system_prompt,
-            prefiller="",
+            system_prompt=dataset.system_prompt,
+            prefiller=dataset.prefiller,
             tokenizer=tokenizer,
             generation_config=config['generation'],
             device=model.device
@@ -88,10 +91,10 @@ for i, prompt in enumerate(test_prompts):
     
     sample = Sample(
         id=f"early_exit_{i+1}",
-        input=prompt,
+        input=str(prompt),
         target="",
         metadata={
-            "system_prompt": system_prompt,
+            "system_prompt": dataset.system_prompt,
             "total_tokens": total_tokens,
             "early_exits": early_exits,
             "early_exit_rate": early_exit_rate,
@@ -101,7 +104,7 @@ for i, prompt in enumerate(test_prompts):
     )
     samples.append(sample)
     
-    print(f"Generated {total_tokens} tokens for response {i+1}/{len(test_prompts)}, {early_exits} early exits ({early_exit_rate:.1%})")
+    print(f"Generated {total_tokens} tokens for response {i+1}/{max_samples}, {early_exits} early exits ({early_exit_rate:.1%})")
 
 if not samples:
     print("No samples generated successfully!")
