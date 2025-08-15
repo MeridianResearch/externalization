@@ -141,8 +141,8 @@ for epoch in range(num_epoch):
                 # 'epoch': epoch,
                 'batch_in_epoch': batch_ticker,
                 'prompt_idx': prompt_batch.idx[0],
-                'mean_logit_kl': mean_logit_kl.item(),
-                'mean_exit_logprob': mean_exit_logprob.item(),
+                'student_teacher_token_kl_divergence': mean_logit_kl.item(),
+                'early_exit_decision_loss': mean_exit_logprob.item(),
                 'total_loss': total_loss.item(),
                 'sampled_exit_prob_diff': prob_diff.mean().item()
             }
