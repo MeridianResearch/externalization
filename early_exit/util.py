@@ -200,7 +200,7 @@ def load_model(model, model_path):
     else:
         model.load_state_dict(torch.load(os.path.join(model_path, "pytorch_model.bin"), map_location=model.device))
     
-    #early exit probe weights
+    # early exit probe weights
     probe_weights_path = os.path.join(model_path, "early_exit_probes.pt")
     if os.path.exists(probe_weights_path):
         probe_weights = torch.load(probe_weights_path, map_location=model.device)
