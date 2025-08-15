@@ -41,7 +41,12 @@ def generate_layer_type_with_early_exit_decision_head(base_type: Type[AutoModelF
 
             self.vocab_size = config.vocab_size
 
-            self.early_exit_decision_weights = nn.Linear(config.hidden_size, 1, dtype=dtype)
+            self.early_exit_decision_weights = nn.Sequential(
+                nn.Linear(config.hidden_size, 2*config.hidden_size, dtype=dtype),
+                nn.ReLU(),
+                nn.Linear(2*config.hidden_size, 1, dtype=dtype),
+            )
+            # self.early_exit_decision_weights = nn.Linear(config.hidden_size, 1, dtype=dtype)
             # self.early_readout_weights = nn.Linear(config.hidden_size, self.vocab_size, bias=False, dtype=dtype)
 
         def update_exit_decision_during_generation(self, hidden_states: _T):
