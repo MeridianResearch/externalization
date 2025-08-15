@@ -13,3 +13,4 @@ tests/early_exit_teacher/trash/*
 models/*
 results_and_data/early_exit_sft_dataset/test/merged_teacher_data_sparse.pkl.gz
 allocate_node.sh
+eval_logs/*
