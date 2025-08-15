@@ -1,16 +1,1 @@
-.venv/*
-.venv311/*
-wandb/*
-# .gitignore
-run_sft_train.sh
-tests/.ipynb*
-*checkpoint*
-*cpython*
-tests/neat_test.ipynb
-shared_utils/*
-# tests/*
-tests/early_exit_teacher/trash/*
-models/*
-results_and_data/early_exit_sft_dataset/test/merged_teacher_data_sparse.pkl.gz
-allocate_node.sh
-eval_logs/*
+results_and_data/early_exit_sft_dataset/merged_teacher_data_sparse.pkl.gz
