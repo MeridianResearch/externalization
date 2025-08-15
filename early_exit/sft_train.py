@@ -115,6 +115,11 @@ for epoch in range(num_epoch):
         sft_student_probs = sft_student_output_scores.logits[:,-gen_len:].softmax(-1)       # [batch * samples, gen len, vocabulary]  
         token_logits_kl_div = (sft_student_probs * ((sft_student_probs + eps) / (sft_teacher_probs + eps)).log()).sum(-1)   # [batch * samples, gen len]
         mean_logit_kl = token_logits_kl_div.mean()
+        
+        # For plotting: KL divergence using (r-1) - log(r) approximation
+        ratio_for_plot = (sft_student_probs + eps) / (sft_teacher_probs + eps)
+        token_logits_kl_div_plot = (sft_student_probs * ((ratio_for_plot - 1) - ratio_for_plot.log())).sum(-1)
+        mean_logit_kl_plot = token_logits_kl_div_plot.mean()
 
         # Get KL divergences of early exit preds
         print('CRUDE KL AND MAKE SURE PROBS ARE ALIGNED AGAIN')
@@ -141,7 +146,7 @@ for epoch in range(num_epoch):
                 # 'epoch': epoch,
                 'batch_in_epoch': batch_ticker,
                 'prompt_idx': prompt_batch.idx[0],
-                'student_teacher_token_kl_divergence': mean_logit_kl.item(),
+                'student_teacher_token_kl_divergence': mean_logit_kl_plot.item(),
                 'early_exit_decision_loss': mean_exit_logprob.item(),
                 'total_loss': total_loss.item(),
                 'sampled_exit_prob_diff': prob_diff.mean().item()
