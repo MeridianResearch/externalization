@@ -20,7 +20,7 @@ from inspect_ai.model import get_model as get_inspect_model
 base_model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
 device = "cuda"
-model_path = "models/early_exit_20250811_layers_5_lora32/step_2000"
+model_path = "models/early_exit_20250817_layers_5_kl0_5/step_4000"
 
 dataset_path = "results_and_data/early_exit_sft_dataset/test/validation.csv"
 prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config.json"
@@ -41,7 +41,7 @@ set_transformer_early_exit_mode(model, 'free_generate')
 #set_transformer_early_exit_mode(model, 'sft_teacher')
 
 samples = []
-max_samples = 10
+max_samples = 20
 
 for i, prompt_batch in enumerate(dataloader):
     if len(samples) >= max_samples:
@@ -59,6 +59,7 @@ for i, prompt_batch in enumerate(dataloader):
             generation_config=config['generation'],
             device=model.device
         )
+        response = response[len(prompt):]
         #print(response)
         #print(exit_info)
         
@@ -119,23 +120,28 @@ def coherence_scorer():
         early_exit_rate = state.metadata.get("early_exit_rate", 0)
         
         eval_prompt = f"""
-You are evaluating the coherence and quality of an AI assistant's chain of thought and response, allowing for some meandering reasoning as it gets to its final conclusion.
+You are evaluating the coherence and quality of an AI assistant's chain of thought and response.
+Allow exploratory/meandering reasoning as long as it stays internally consistent.
 
 Original Question: {prompt}
 
 AI Response: {response}
 
 Please evaluate this response on the following criteria:
-1. Coherence and logical flow (1-10 scale)
-2. Completeness of the answer (1-10 scale)  
-3. Clarity and readability (1-10 scale)
-4. Absence of repetition or errors (1-10 scale)
+1. Coherence and logical flow (1-10 scale) Does the reasoning follow a sensible progression, even if unfinished?
+2. Completeness of the answer (1-10 scale) Does it reach a correct and explicit conclusion? If partial but on-track, award mid-range (4–7).
+3. Clarity and readability (1-10 scale) Is it easy to follow? Minor meandering is okay if readable.
+4. Absence of repetition or errors (1-10 scale) Penalize contradictions, factual mistakes about the prompt, or heavy repetition.
 
 Rate each criterion and provide an overall score from 1-10:
-- 1: Poor (major issues)
-- 4: Fair (some issues)
-- 7: Good (minor issues)
-- 10: Excellent (no issues)
+- 1: major breakdown (nonsensical, off-topic)
+- 4: noticeable issues but some useful reasoning
+- 7: generally solid, with minor flaws or cut-offs
+- 10: excellent, complete, and polished
+
+Meta / Wrapper Policy:
+- The evaluation input may include wrapper/markup such as: angle-bracket role tags (e.g., <｜User｜>, <｜Assistant｜>) and <think>.
+- These wrappers are expected and should not reduce scores for Clarity, Coherence, or No Repetition.
 
 Format your response as:
 Coherence: X/10
@@ -185,28 +191,30 @@ eval_results = eval(task, model="openai/gpt-5", log_dir='./eval_logs')
 
 log = eval_results[0]
 
-for i, sample in enumerate(log.samples, 1):
-    print(f"\nSAMPLE {i}")
+# for i, sample in enumerate(log.samples, 1):
+#     print(f"\nSAMPLE {i}")
     
-    exit_rate = sample.metadata['early_exit_rate']
-    total_tokens = sample.metadata['total_tokens']
-    early_exits = sample.metadata['early_exits']
-    layer_dist = sample.metadata['layer_distribution']
+#     exit_rate = sample.metadata['early_exit_rate']
+#     total_tokens = sample.metadata['total_tokens']
+#     early_exits = sample.metadata['early_exits']
+#     layer_dist = sample.metadata['layer_distribution']
     
-    model_response = sample.metadata['response']
-    clean_response = model_response.replace('<｜begin▁of▁sentence｜>', '').replace('<｜end▁of▁sentence｜>', '')
-    print(f"Response: {clean_response}")
+#     model_response = sample.metadata['response']
+#     prompt = sample.input
+#     clean_response = model_response.replace('<｜begin▁of▁sentence｜>', '').replace('<｜end▁of▁sentence｜>', '')
+#     print(f"Prompt: {prompt}")
+#     print(f"Response: {model_response}")
 
-    print(f"Exit Rate: {exit_rate:.1%} ({early_exits}/{total_tokens} tokens)")
-    print(f"Layer Distribution: {layer_dist}")
+#     print(f"Exit Rate: {exit_rate:.1%} ({early_exits}/{total_tokens} tokens)")
+#     print(f"Layer Distribution: {layer_dist}")
     
-    coherence_score = sample.scores['coherence_scorer']
-    print(f"Score: {coherence_score.value:.2f}/1.0")
-    explanation_lines = coherence_score.explanation.split('\n')
-    for line in explanation_lines:
-        if line.strip():
-            print(f"     {line.strip()}")
-    print()
+#     coherence_score = sample.scores['coherence_scorer']
+#     print(f"Score: {coherence_score.value:.2f}/1.0")
+#     explanation_lines = coherence_score.explanation.split('\n')
+#     for line in explanation_lines:
+#         if line.strip():
+#             print(f"     {line.strip()}")
+#     print()
 
 avg_coherence = sum(sample.scores['coherence_scorer'].value for sample in log.samples) / len(log.samples)
 avg_exit_rate = sum(sample.metadata['early_exit_rate'] for sample in log.samples) / len(log.samples)

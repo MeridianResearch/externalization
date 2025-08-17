@@ -219,7 +219,8 @@ def replace_attention_layers(model: AutoModelForCausalLM, lora_config_dict: dict
 
             load_state = new_layer.load_state_dict(module.state_dict(), strict=False)
             # assert load_state.missing_keys == ['early_exit_decision_weights.weight', 'early_exit_decision_weights.bias', 'early_readout_weights.weight'], load_state.missing_keys
-            assert load_state.missing_keys == ['early_exit_decision_weights.weight', 'early_exit_decision_weights.bias'], load_state.missing_keys
+            #assert load_state.missing_keys == ['early_exit_decision_weights.weight', 'early_exit_decision_weights.bias'], load_state.missing_keys
+            assert load_state.missing_keys == ['early_exit_decision_weights.0.weight', 'early_exit_decision_weights.0.bias', 'early_exit_decision_weights.2.weight', 'early_exit_decision_weights.2.bias'], load_state.missing_keys
 
             parent = dict(model.named_modules())[name.rsplit('.', 1)[0]]
             setattr(parent, name.rsplit('.', 1)[-1], new_layer.to(device = model.device, dtype=model.dtype))
