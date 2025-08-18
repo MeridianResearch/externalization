@@ -3,6 +3,9 @@ from torch.optim import Adam
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
+import sys
+sys.path.append("../")
+
 from shared_utils.data import CSVPromptDataset
 from early_exit.util import get_model
 from shared_utils.load import get_tokenizer, configs_from_yaml
@@ -18,9 +21,9 @@ num_epoch = 1                     # args.num_epoch
 num_exit_samples = 4                  # args.num_exit_samples
 device = "cuda"                    # args.device
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"                    # args.model_name
-model_config_path = "config_deepseek.yaml"                     # args.model_config_path
-dataset_path = "results_and_data/early_exit_sft_dataset/test/data.csv"                  # args.dataset_path
-prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config.json"                    # args.prompt_config_path
+model_config_path = "../config_deepseek.yaml"                     # args.model_config_path
+dataset_path = "../results_and_data/early_exit_sft_dataset/test/data.csv"                  # args.dataset_path
+prompt_config_path = "../results_and_data/early_exit_sft_dataset/test/prompt_config.json"                    # args.prompt_config_path
 batch_size = 1                    # args.batch_size -- might want to sort out batching, but increasing num_exit_samples might be better + less effort
 
 args = {
@@ -62,6 +65,41 @@ run = wandb.init(
         model_exitable_layers=model.exitable_layer_idxs.tolist()
     )
 )
+
+# Define metrics with descriptions
+wandb.define_metric("student_teacher_token_kl_divergence", 
+                   summary="mean",
+                   description="How well does the student match the teacher's token predictions? Lower = better token alignment.")
+
+wandb.define_metric("early_exit_decision_loss", 
+                   summary="mean", 
+                   description="How well does the student predict when to exit at the same layers as the teacher? Lower = better exit timing.")
+
+wandb.define_metric("total_loss", 
+                   summary="mean",
+                   description="Combined training objective: token alignment + exit timing. Lower = better overall performance.")
+
+wandb.define_metric("sampled_exit_prob_diff", 
+                   summary="mean",
+                   description="When the teacher decides to exit at layer X with probability P, does the student also think exiting at layer X has probability ~P? Lower = better calibration.")
+
+# Define layer-specific metrics with descriptions
+for i, layer_idx in enumerate(model.exitable_layer_idxs):
+    wandb.define_metric(f"layer_mean_exit_probabilities_teacher/layer_{layer_idx}", 
+                       summary="mean",
+                       description=f"Average probability of exiting at layer {layer_idx} according to teacher model.")
+    
+    wandb.define_metric(f"layer_mean_exit_probabilities_student/layer_{layer_idx}", 
+                       summary="mean", 
+                       description=f"Average probability of exiting at layer {layer_idx} according to student model.")
+    
+    wandb.define_metric(f"layer_empirical_exit_props/layer_{layer_idx}", 
+                       summary="mean",
+                       description=f"Empirical proportion of samples that actually exited at layer {layer_idx}.")
+    
+    wandb.define_metric(f"mean_token_logits_kl_div_per_prescribed_early_exit/layer_{layer_idx}", 
+                       summary="mean",
+                       description=f"Average token KL divergence when student is forced to exit at layer {layer_idx}.")
 
 
 
@@ -116,8 +154,11 @@ for epoch in range(num_epoch):
         token_logits_kl_div = (sft_student_probs * ((sft_student_probs + eps) / (sft_teacher_probs + eps)).log()).sum(-1)   # [batch * samples, gen len]
         mean_logit_kl = token_logits_kl_div.mean()
         
-        # For plotting: KL divergence using (r-1) - log(r) approximation
-        ratio_for_plot = (sft_student_probs + eps) / (sft_teacher_probs + eps)
+        # For plotting: KL divergence using Bregman divergence estimator (r-1) - log(r)
+        # Standard: KL[q,p] = E_q[log(q/p)] = E_q[-log(r)] where r = p/q
+        # Improved: KL[q,p] ≈ E_q[(r-1) - log(r)] where r = p/q (always positive, lower variance)
+        # In our case: q=student, p=teacher, so r = teacher/student
+        ratio_for_plot = (sft_teacher_probs + eps) / (sft_student_probs + eps)  # r = teacher/student
         token_logits_kl_div_plot = (sft_student_probs * ((ratio_for_plot - 1) - ratio_for_plot.log())).sum(-1)
         mean_logit_kl_plot = token_logits_kl_div_plot.mean()
 
