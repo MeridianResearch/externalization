@@ -35,7 +35,7 @@ class EarlyExitModelMixin(ABC, nn.Module):
         raise NotImplementedError
 
     @torch.no_grad()
-    def early_exit_target_probs(self, early_output_log_probs: _T, teacher_final_layer_log_probs: _T) -> _T:
+    def early_exit_target_probs(self, early_output_log_probs: _T, teacher_final_layer_log_probs: _T, KL_FACTOR = 1.0) -> _T:
         """
         Target (SFT teacher) probability of exiting, which will be sampled from and prescribed for the student
 
@@ -52,9 +52,6 @@ class EarlyExitModelMixin(ABC, nn.Module):
         
         Return stickbreaking_probs of shape [batch, sequence, exitable layers + 1]
         """
-
-        KL_FACTOR = 1.0
-
         # 1. Get KL divergence between early exit and final layers
         teacher_expanded = teacher_final_layer_log_probs.unsqueeze(1).exp()  # [batch, 1, sequence, vocab]
         early_output_probs = early_output_log_probs.exp()
