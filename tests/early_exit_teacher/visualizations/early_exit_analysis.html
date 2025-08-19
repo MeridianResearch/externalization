@@ -367,11 +367,11 @@
                         <th onclick="sortTable('main-stats-table', 3)">Clarity</th>
                         <th onclick="sortTable('main-stats-table', 4)">No Repetition</th>
                         <th onclick="sortTable('main-stats-table', 5)">Overall</th>
-                        <th onclick="sortTable('main-stats-table', 6)">Accuracy</th>
+                        <th onclick="sortTable('main-stats-table', 6)">Overall (%)</th>
                         <th onclick="sortTable('main-stats-table', 7)">Avg Tokens</th>
                         <th onclick="sortTable('main-stats-table', 8)">Avg Exits</th>
                         <th onclick="sortTable('main-stats-table', 9)">Exit Rate</th>
-                        <th>Details</th>
+                        <th>Promptwise Details</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -584,7 +584,7 @@
                         <th onclick="sortTable('prompt-table-0', 3)">Clarity</th>
                         <th onclick="sortTable('prompt-table-0', 4)">No Repetition</th>
                         <th onclick="sortTable('prompt-table-0', 5)">Overall</th>
-                        <th onclick="sortTable('prompt-table-0', 6)">Accuracy</th>
+                        <th onclick="sortTable('prompt-table-0', 6)">Overall (%)</th>
                         <th onclick="sortTable('prompt-table-0', 7)">Total Tokens</th>
                         <th onclick="sortTable('prompt-table-0', 8)">Early Exits</th>
                         <th onclick="sortTable('prompt-table-0', 9)">Exit Rate</th>
@@ -651,8 +651,12 @@ I should also consider some edge cases. What if n is negative? Well, factorial i
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">40.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response captures the core idea of recursion and the importance of a base case with a factorial example, but it meanders with self-referential comments, repeats points, and ends mid-sentence. There’s a minor inaccuracy (“return 1 or the number itself”) and no clean, consolidated explanation or example code. The incomplete ending and stream-of-consciousness style hurt coherence and clarity.</div>
                                     </div>
                                 </div>
                             </div>
@@ -731,8 +735,12 @@ Wait, I&#x27;m gonna be able/discover/create functions/methods that functions/me
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent, contains corrupted text and random language switches, and fails to explain recursion. It includes heavy repetition, apparent glitches, and does not provide a structured or accurate answer to the question.</div>
                                     </div>
                                 </div>
                             </div>
@@ -810,8 +818,12 @@ I should also mention that recursion is often used inductive structures, like tr
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">22.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is rambling and self-referential, with frequent interruptions of thought and mixed-language fragments. It lacks a clear, logical structure and contains grammatical errors and incoherent phrases. While it mentions key concepts like base case, recursive case, and examples (factorial, Fibonacci), it does not explain them clearly or accurately. There is repetition and confusion, and no concrete example or concise definition is provided.</div>
                                     </div>
                                 </div>
                             </div>
@@ -881,8 +893,12 @@ But wait, how does the function call itself? Let me write it out. So, factorial(
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">27.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response meanders with meta-commentary and ends abruptly, hurting coherence. It covers the basic idea of recursion and a base case but lacks a complete, accurate example or code, so it’s incomplete. Clarity suffers from hesitations and incorrect statements (e.g., “factorial(n) = n * factorial(1)” and “function … takes 1 as an argument”). There’s some repetition and notable errors, lowering the “No Repetition” score.</div>
                                     </div>
                                 </div>
                             </div>
@@ -948,8 +964,12 @@ I should also consider some edge cases. What if n is negative? Well, factorial i
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">45.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response gives a basic idea of recursion and uses the factorial example, mentioning base cases and self-calls. However, it meanders with an internal monologue style, ends mid-sentence, and includes minor inaccuracies (e.g., “return 1 or the number itself” for the base case of factorial). It lacks a clean, structured explanation, omits helpful details like the recursive vs. base case pattern and call stack considerations, and has some repetition and uncertainty.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1026,8 +1046,12 @@ ches Whether各项tc/from/to/from/to...
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent, with garbled text, broken Unicode, and irrelevant phrases. It does not address the concept of recursion at all, lacks logical flow, and includes repeated nonsense fragments and clear errors.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1093,8 +1117,12 @@ I&#x27;ve also heard that in some programming vice, like in the aforementioned Y
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent, with many grammatical glitches, garbled text, and irrelevant analogies. It does not correctly explain recursion (e.g., the addOne example is incorrect and lacks a proper base case). There is heavy repetition (“certain certain...”), mixed languages, and encoding artifacts, making it hard to read and follow. It fails to clearly define key concepts like base case and recursive case or provide a correct, simple example.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1160,8 +1188,12 @@ So, in general, a递归 solution has two parts: the recursive case and the base 
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">40.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response captures the core idea of recursion (a function calling itself with a base case) and provides a factorial example, which covers the basics. However, the explanation wanders with an inner-monologue style, includes awkward phrasing, mixed languages, and some errors (e.g., “factorial/non-zero,” “factorial(n) = n * factorial(n vice versa)”). These issues reduce clarity and coherence, and there’s minor repetition. While the essential concept is present, the presentation is confusing and error-prone.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1227,8 +1259,12 @@ But wait, how do you handle the initial calls? Like, if someone calls fib(5), it
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">40.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response correctly identifies recursion, base cases, and gives factorial and Fibonacci examples, but it’s rambling, self-contradictory in tone (“not entirely sure”), and ends mid-sentence. It repeats points about base cases, lacks structure, and omits useful details (e.g., stack/termination concerns, when to use recursion). The unfinished ending and meandering narrative hurt clarity and coherence.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1325,8 +1361,12 @@ Wait, I&#x27;m gonna��-exc gratificationpdniprint.com -&gt;/remainsders. �
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent, with fragmented phrases, mixed languages, and garbled text. It does not explain recursion or provide examples, contains numerous errors, and repeats disjointed phrases, making it unreadable and unhelpful.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1404,8 +1444,12 @@ Wait, perhaps</div>
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is highly disorganized, with frequent interruptions, filler phrases, and garbled text. It never provides a clear definition of recursion or a meaningful example, and it contains numerous errors, repetitions, and irrelevant asides. As a result, it is neither coherent nor complete, and it lacks clarity.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1477,8 +1521,12 @@ Wait, perhaps I should think about a function that uses recursion to perform a c
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">20.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is a stream-of-consciousness with frequent digressions and “wait” repetitions, leading to poor logical flow. It offers a vague notion that recursion involves a function calling itself and mentions factorial/tree traversal, but it lacks key concepts like base cases and termination, and provides no clear example. Mixed-language text, typos, and self-contradictions further reduce clarity and correctness.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1546,8 +1594,12 @@ Wait, but what if I</div>
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">25.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is rambling and self-referential, with multiple false starts and an unfinished ending. While it touches on the core idea (recursive calls and a base case) and gives a factorial example, it’s not fully developed. Mixed languages and repeated “wait” interjections hurt clarity and flow, and the answer stops abruptly, leaving the explanation incomplete.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1580,7 +1632,7 @@ Wait, but what if I</div>
                         <th onclick="sortTable('prompt-table-1', 3)">Clarity</th>
                         <th onclick="sortTable('prompt-table-1', 4)">No Repetition</th>
                         <th onclick="sortTable('prompt-table-1', 5)">Overall</th>
-                        <th onclick="sortTable('prompt-table-1', 6)">Accuracy</th>
+                        <th onclick="sortTable('prompt-table-1', 6)">Overall (%)</th>
                         <th onclick="sortTable('prompt-table-1', 7)">Total Tokens</th>
                         <th onclick="sortTable('prompt-table-1', 8)">Early Exits</th>
                         <th onclick="sortTable('prompt-table-1', 9)">Exit Rate</th>
@@ -1649,8 +1701,12 @@ I also remember that supervised learning requires a lot of labeled data because 
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">50.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response provides the main distinctions (labeled vs. unlabeled data, typical tasks, examples) and follows a loose structure, but it’s rambling and framed as the assistant thinking out loud. It ends mid-sentence, which hurts completeness and coherence. There’s some repetition without adding new information. No major factual errors, but the explanation could be more concise and finished.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1712,8 +1768,12 @@ So, in the supervised loss, the model is其所 entiretym-thirdsrdly trained exce
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent, with garbled language, code-switching, and nonsensical phrases. It does not provide the key differences between supervised and unsupervised learning, lacks structure, and includes repeated, error-filled fragments. It fails to answer the question clearly or accurately.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1781,8 +1841,12 @@ Wait, but/how does that work? For example, in unsup pretend, you might have a bu
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">17.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response contains the core idea (labels vs no labels) but is disorganized, filled with self-corrections, typos, and fragmented sentences. It repeats points without adding substance and never provides clear examples, objectives, or typical use cases. The readability is severely impacted by errors and interruptions, making the answer incomplete and hard to follow.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1852,8 +1916,12 @@ Another thought: in supervised learning, you can have both classification and re
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">45.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response identifies the core difference (labeled vs unlabeled data) and gives common tasks and examples, which covers the basics. However, it’s rambling and self-referential, includes repetitive statements, has grammatical issues and minor inaccuracies (“unsupervised electronic data”), and ends with an incomplete sentence. The lack of a concise, structured comparison and the presence of errors reduce clarity and coherence.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1921,8 +1989,12 @@ I also remember that supervised learning requires a lot of labeled data because 
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">52.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The answer captures the core distinction (labeled vs. unlabeled data) and gives relevant examples (classification/regression vs. clustering/dimensionality reduction). However, it meanders with an inner monologue style, repeats points, and ends mid-sentence, reducing coherence and clarity. It lacks a concise, structured comparison (e.g., goals, data requirements, evaluation methods, typical algorithms), and the incomplete ending hurts completeness. No major factual errors, but the repetition and unfinished thought lower the quality.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1990,8 +2062,12 @@ Wait,Dismiss-:Oказалось/dis-:个多/rem-:Oказалly-:Oo,cfillions-:/n
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent and nonsensical, with broken phrases, random characters, and language switches. It does not address the question about supervised vs. unsupervised learning, contains repeated and glitched fragments, and has significant errors that hinder readability.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2059,8 +2135,12 @@ But I&#x27;m not quite sure if I&#x27;ve been told this correctly. Maybe I shoul
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">15.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent with garbled text, contradictions, and stream-of-consciousness writing. It repeats phrases and contains clear errors (e.g., mixed languages, malformed words). While it briefly hints at the core idea—supervised uses labeled data, unsupervised uses unlabeled—it never clearly articulates the key differences or provides structured examples, resulting in low completeness and clarity.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2130,8 +2210,12 @@ Wait除此以外,</div>
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">27.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response identifies the core difference (labeled vs. unlabeled data) and mentions typical tasks and metrics, but it’s meandering, self-referential, and ends abruptly. It contains typos and errors (e.g., “Davies silhouette,” logistic regression categorized under regression, “supervised testing,” stray characters), and lacks a clear, structured comparison or summary.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2199,8 +2283,12 @@ I also remember that supervised learning requires more</div>
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">50.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response captures the core distinction (labeled vs. unlabeled data) and gives basic examples (spam classification, clustering), but it’s delivered as a stream-of-consciousness with some repetition and ends mid-sentence, hurting coherence and polish. It lacks depth on key contrasts (e.g., typical algorithms, evaluation methods, outputs like clusters vs. predictions, use cases) and contains an unfinished thought, which reduces completeness and readability.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2264,8 +2352,12 @@ Wait,前所-ver_:Cookies are/is别 insign-looking like those lookingering off a 
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent, mixing random phrases and multiple languages without logical flow. It does not address the key differences between supervised and unsupervised learning. The text is unclear, contains numerous errors, and repeats fragments, making it unreadable and uninformative.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2344,8 +2436,12 @@ Wait, perhaps I&#x27;m overcomplicating. Maybe I should think/write about the ke
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is a rambling internal monologue with no clear structure or progression. It fails to define supervised or unsupervised learning or compare them, contains numerous typos and fragmented sentences, and repeats phrases like “Wait” multiple times. It neither addresses the question nor provides useful information.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2411,8 +2507,12 @@ Wait, maybe I should think of it as a two-step process. In supervised vs. unsupe
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent, with fragmented sentences, mixed languages, and unfocused rambling. It contains factual errors (e.g., framing supervised vs. unsupervised in terms of causality, misunderstanding loss functions in unsupervised learning) and contradictions. It fails to clearly state the key differences (labels, objectives, typical tasks/algorithms) and includes repeated, unclear statements. Overall, it does not answer the question in a clear or accurate way.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2478,8 +2578,12 @@ But wait, in that case, how does that help? Because in that case, the algorithm 
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">32.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is a stream-of-consciousness with hesitations and ends mid-sentence, hurting coherence. It covers the basic labeled vs. unlabeled distinction but misses key contrasts (e.g., tasks like classification/regression vs. clustering/dimensionality reduction, evaluation methods, common algorithms) and includes a minor confusion between clustering and association rules. The tone is uncertain, repeats points, and lacks a clear, structured comparison.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2512,7 +2616,7 @@ But wait, in that case, how does that help? Because in that case, the algorithm 
                         <th onclick="sortTable('prompt-table-2', 3)">Clarity</th>
                         <th onclick="sortTable('prompt-table-2', 4)">No Repetition</th>
                         <th onclick="sortTable('prompt-table-2', 5)">Overall</th>
-                        <th onclick="sortTable('prompt-table-2', 6)">Accuracy</th>
+                        <th onclick="sortTable('prompt-table-2', 6)">Overall (%)</th>
                         <th onclick="sortTable('prompt-table-2', 7)">Total Tokens</th>
                         <th onclick="sortTable('prompt-table-2', 8)">Early Exits</th>
                         <th onclick="sortTable('prompt-table-2', 9)">Exit Rate</th>
@@ -2581,8 +2685,12 @@ I also recall that HTTP has different methods for sending requests. There&#x27;s
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">27.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is meandering, written as a stream of self-reflection, and it cuts off mid-sentence. It covers only basic notions (HTTP name, client/server, request/response, a few methods) while missing key steps like DNS lookup, TCP/TLS handshakes, headers, status codes, caching, cookies, HTTP/2/3, and the browser’s rendering process. It repeats tentative phrases (“I think”) and contains minor inaccuracies/simplifications about responses and errors, leading to low clarity and completeness.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2640,8 +2748,12 @@ I also recall that HTTP has different methods for sending requests. There&#x27;s
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent, with garbled text, random symbols/emojis, and fragmented phrases. It does not explain how HTTP works or what happens when visiting a website, so it’s incomplete. Readability is very poor, and there is frequent repetition and clear errors (encoding glitches, nonsensical word salad).</div>
                                     </div>
                                 </div>
                             </div>
@@ -2709,8 +2821,12 @@ Then there&#x27;s responding. Once the request is received, the server responds 
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">12.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is disorganized, mixes languages, contains numerous typos and malformed sentences, and trails off mid-thought. It provides very little accurate information about HTTP and omits key steps (DNS lookup, TCP/TLS handshakes, request/response structure, status codes, headers, caching, assets, rendering). Frequent errors and confusion make it hard to follow and not useful as an explanation.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2778,8 +2894,12 @@ Then there&#x27;s the concept of headers. Headers are like the headers in a webp
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">17.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is meandering and self-referential rather than a structured explanation. It contains multiple factual errors (e.g., misdefining HTTP acronym parts, saying clicking a link is a POST, confusing headers with page headers) and leaves out key steps like DNS lookup, TCP/TLS handshakes, request/response structure, status codes, caching, cookies, and rendering. Grammar and phrasing reduce readability, with fragments and contradictions. There’s some repetition and confusion rather than a clear, accurate description of how HTTP works.</div>
                                     </div>
                                 </div>
                             </div>
@@ -2847,8 +2967,12 @@ I also recall that HTTP has different methods for sending requests. There&#x27;s
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">32.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response meanders with uncertain, first-person musings and ends mid-sentence, hurting coherence and completeness. It touches on some basics (HTTP, client/server, methods) but misses key steps like DNS, TCP/TLS handshakes, request/response structure, status codes, headers, caching, cookies, and rendering. Clarity suffers due to frequent “I think/I remember” hedging. There’s mild repetition and some imprecision (e.g., “protocol suite” usage, response body description).</div>
                                     </div>
                                 </div>
                             </div>
@@ -3048,8 +3172,12 @@ qualsStub conce Western […]
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely gibberish with random characters, mixed languages, and fragmented phrases. It does not address how HTTP works or what happens when visiting a website, shows no logical structure, and contains heavy repetition and obvious errors/encoding artifacts.</div>
                                     </div>
                                 </div>
                             </div>
@@ -3133,8 +3261,12 @@ I think the basic idea is:&lt;/p&gt;
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent, with fragmented thoughts, mixed languages, and nonsensical phrases. It lacks a structured explanation of HTTP and what happens when visiting a website, offering only a few disjointed terms (client-server, headers, response) without detail. Clarity is very poor, and there is heavy repetition and filler (e.g., long sequences of symbols and repeated words).</div>
                                     </div>
                                 </div>
                             </div>
@@ -3206,8 +3338,12 @@ Then there&#x27;s the body of the request, which is the actual data I&#x27;m sen
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">22.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is a meandering inner monologue with mixed languages and an emoji, which hurts coherence and clarity. It contains inaccuracies (e.g., confusing HTTP headers with webpage headers, implying the URL is in the request body, vague “HTTP/不分”), and omits key steps like DNS lookup, TCP/TLS handshakes, request/response structure, status codes, caching, cookies, and connection reuse. It repeats basic points about client/server without building a clear, step-by-step explanation.</div>
                                     </div>
                                 </div>
                             </div>
@@ -3277,8 +3413,12 @@ I&#x27;m a bit confused about the difference between HTTP GET and POST. I think 
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">25.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response meanders with a self-doubting tone and ends mid-sentence, breaking logical flow. It omits major parts of the process (DNS lookup, TCP/TLS handshakes, HTTP/1.1 vs HTTP/2 multiplexing, caching, cookies, rendering multiple resources) and only briefly mentions requests/responses. Some details are imprecise (e.g., implying Content-Type tells the server what data to expect rather than what the client is sending; no mention of Accept). There’s repetition of basic points (“client sends a request, server responds”) and incomplete comparisons (GET vs POST). Overall, it’s incomplete, uncertain, and contains minor inaccuracies.</div>
                                     </div>
                                 </div>
                             </div>
@@ -3372,8 +3512,12 @@ The assistant is thinking:например,например,Filed/unuglyg麻yeye
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is largely incoherent and consists of garbled, mixed-language fragments that do not follow a logical structure. It does not address the question about how HTTP works or what happens when visiting a website, offering no meaningful content. The text contains numerous errors, random symbols, and repeated phrases, making it unclear and unreadable.</div>
                                     </div>
                                 </div>
                             </div>
@@ -3481,8 +3625,12 @@ Wait, perhaps I should think about the HTTP protocol in general. So according to
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">10.0%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is rambling and incoherent, with frequent false starts and unrelated tangents. It fails to explain how HTTP works or what happens when visiting a website. It contains multiple errors (e.g., incorrect expansions of HTTP), repetition (“Wait” lines), broken sentences, odd characters/emojis, and language switching. Overall, it does not address the user’s question in any meaningful or accurate way.</div>
                                     </div>
                                 </div>
                             </div>
@@ -3558,8 +3706,12 @@ Wait, but I&#x27;m</div>
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">12.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response is highly repetitive and circular, with minimal substantive information about HTTP. It lacks logical flow, includes unrelated text and symbols, and provides no meaningful steps (e.g., DNS, TCP/TLS handshake, requests/headers, responses/status codes, rendering). Significant errors and repetition make it unclear and incomplete.</div>
                                     </div>
                                 </div>
                             </div>
@@ -3626,8 +3778,12 @@ The response body includes the response headers, which include the version numbe
                                         </div>
                                         <div class="metric-card">
                                             <div class="metric-value">17.5%</div>
-                                            <div class="metric-label">Accuracy</div>
+                                            <div class="metric-label">Overall (%)</div>
                                         </div>
+                                    </div>
+                                    <div class="explanation-box">
+                                        <div class="explanation-title">💡 Brief Explanation</div>
+                                        <div>The response reads like an internal monologue rather than a structured answer, leading to poor logical flow and repetition. It contains factual errors (e.g., nonexistent HTTP versions like 1.2, 8, 9, 10; “20xx” status codes) and stops mid-sentence, making it highly incomplete. Clarity suffers due to the meandering style and inaccuracies.</div>
                                     </div>
                                 </div>
                             </div>
