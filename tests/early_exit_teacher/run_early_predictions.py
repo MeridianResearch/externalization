@@ -26,9 +26,9 @@ if __name__ == "__main__":
         ]
         
         max_new_tokens = 400
-        all_modes = ['normal', 'unfrozen', 'frozen_residual', 'frozen_cache']
+        all_modes = ['normal', 'unfrozen', 'frozen_residual']
         early_exit_modes = [mode for mode in all_modes if mode != 'normal']
-        kl_factors = [0.25, 0.5, 1.0, 4.0]
+        kl_factors = [0.5, 1.0, 2.0, 4.0]
         # test_prompts = test_prompts[:1]; early_exit_modes = early_exit_modes[:1]; kl_factors = kl_factors[:1]   
         early_exit_combinations = list(itertools.product(early_exit_modes, kl_factors))
         all_combinations = [('normal', None)] + early_exit_combinations

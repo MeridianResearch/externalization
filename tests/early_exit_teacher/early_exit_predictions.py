@@ -19,7 +19,7 @@ from inspect_ai.scorer import scorer, accuracy, Score
 from inspect_ai.solver import system_message
 from inspect_ai.model import get_model as get_inspect_model
 
-async def evaluate_response(tokenizer, generated_tokens, chosen_exit_layers, prompt):
+async def evaluate_response(tokenizer, generated_tokens, chosen_exit_layers, prompt, exitable_layers):
     """
     Evaluate the quality and coherence of a generated response using GPT-5 as a judge.
     
@@ -41,6 +41,7 @@ async def evaluate_response(tokenizer, generated_tokens, chosen_exit_layers, pro
     finite_exits = [layer for layer in chosen_exit_layers if layer not in [27, -1, float('inf')]]
     early_exits = len(finite_exits)
     early_exit_rate = early_exits / total_tokens if total_tokens > 0 else 0
+    usage = np.mean(np.array(chosen_exit_layers)/27.0)
     
     # Calculate layer distribution
     layer_distribution = {}
@@ -136,9 +137,13 @@ Brief explanation: [your reasoning]
                 'total_tokens': total_tokens,
                 'early_exits': early_exits,
                 'early_exit_rate': early_exit_rate,
-                'layer_distribution': layer_distribution
+                'layer_distribution': layer_distribution,
+                'usage': usage
             },
-            'evaluation_text': eval_text
+            'evaluation_text': eval_text,
+            'chosen_exit_layers': [27 if item == 27 or item == -1 else item for item in chosen_exit_layers],
+            'tokens': safe_decode_tokens(tokenizer, generated_tokens),
+            'exitable_layers': exitable_layers
         }
         
         # Print summary
@@ -164,6 +169,8 @@ Brief explanation: [your reasoning]
         print(f"Error during evaluation: {e}")
         # Return basic statistics even if evaluation fails
         return {
+            'chosen_exit_layers': [27 if item == 27 or item == -1 else item for item in chosen_exit_layers],
+            'tokens': safe_decode_tokens(tokenizer, generated_tokens),
             'response': response,
             'scores': None,
             'accuracy_score': None,
@@ -407,7 +414,7 @@ class EarlyExitGenerator:
         # Run the async evaluation function
         try:
             eval_results = loop.run_until_complete(
-                evaluate_response(self.tokenizer, generated_tokens, chosen_exit_layers, prompt)
+                evaluate_response(self.tokenizer, generated_tokens, chosen_exit_layers, prompt, self.all_exitable_layers.tolist() if hasattr(self, 'all_exitable_layers') else self.exitable_layers.tolist())
             )
             return eval_results
         except Exception as e:

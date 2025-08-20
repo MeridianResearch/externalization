@@ -4,4 +4,4 @@ The [visualization](https://htmlpreview.github.io/?https://github.com/MeridianRe
 
 1. Normal generation without early exiting
 2. Early exiting without freezing
-3. Early exiting after committing to early exiting
+3. Early exiting with frozen residual stream after exiting

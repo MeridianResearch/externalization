@@ -589,9 +589,9 @@ def visualize_tokens_by_exit_layer(token_strings, exit_layers, early_exit_layer_
         with open(save_html, 'w', encoding='utf-8') as f:
             f.write(full_html)
         print(f"HTML visualization saved to: {save_html}")
-        return HTML(html_content)
+        return html_content
     else:
-        return HTML(html_content)
+        return html_content
     
 def safe_decode_tokens(tokenizer, token_ids):
     """
@@ -703,10 +703,6 @@ def save_multi_prompt_results_html(all_results_data: List[Dict], filename: str =
     
     print(f"✅ HTML visualization saved to: {filename}")
     return filename
-import html
-import json
-from datetime import datetime
-from typing import List, Dict, Any
 
 def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, Any]]) -> str:
     """
@@ -750,7 +746,7 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
                         'no_repetition_sum': 0,
                         'overall_sum': 0,
                         'accuracy_sum': 0,
-                        'exit_rate_sum': 0,
+                        'usage_sum': 0,
                         'total_tokens_sum': 0,
                         'early_exits_sum': 0
                     }
@@ -773,7 +769,7 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
                     
                     if eval_data.get('early_exit_stats'):
                         exit_stats = eval_data['early_exit_stats']
-                        stats['exit_rate_sum'] += exit_stats.get('early_exit_rate', 0)
+                        stats['usage_sum'] += exit_stats.get('usage', 0)
                         stats['total_tokens_sum'] += exit_stats.get('total_tokens', 0)
                         stats['early_exits_sum'] += exit_stats.get('early_exits', 0)
         
@@ -790,7 +786,7 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
                     'no_repetition': round(stats['no_repetition_sum'] / stats['count'], 1),
                     'overall': round(stats['overall_sum'] / stats['count'], 1),
                     'accuracy': round(stats['accuracy_sum'] / stats['count'], 3),
-                    'exit_rate': round(stats['exit_rate_sum'] / stats['count'], 3),
+                    'usage': round(stats['usage_sum'] / stats['count'], 3),
                     'avg_tokens': round(stats['total_tokens_sum'] / stats['count'], 0),
                     'avg_exits': round(stats['early_exits_sum'] / stats['count'], 0)
                 }
@@ -1176,7 +1172,7 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
                         <th onclick="sortTable('main-stats-table', 6)">Overall (%)</th>
                         <th onclick="sortTable('main-stats-table', 7)">Avg Tokens</th>
                         <th onclick="sortTable('main-stats-table', 8)">Avg Exits</th>
-                        <th onclick="sortTable('main-stats-table', 9)">Exit Rate</th>
+                        <th onclick="sortTable('main-stats-table', 9)">Usage</th>
                         <th>Promptwise Details</th>
                     </tr>
                 </thead>
@@ -1206,7 +1202,7 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
                         <td>{stat['accuracy']*100:.1f}%</td>
                         <td>{stat['avg_tokens']:.0f}</td>
                         <td>{stat['avg_exits']:.0f}</td>
-                        <td>{stat['exit_rate']*100:.1f}%</td>
+                        <td>{stat['usage']*100:.1f}%</td>
                         <td>{' '.join(prompt_links)}</td>
                     </tr>
 """
@@ -1249,7 +1245,7 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
                         <th onclick="sortTable('prompt-table-{prompt_idx}', 6)">Overall (%)</th>
                         <th onclick="sortTable('prompt-table-{prompt_idx}', 7)">Total Tokens</th>
                         <th onclick="sortTable('prompt-table-{prompt_idx}', 8)">Early Exits</th>
-                        <th onclick="sortTable('prompt-table-{prompt_idx}', 9)">Exit Rate</th>
+                        <th onclick="sortTable('prompt-table-{prompt_idx}', 9)">Usage</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1269,7 +1265,7 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
             # Extract metrics
             metrics = {'coherence': 'N/A', 'completeness': 'N/A', 'clarity': 'N/A', 
                       'no_repetition': 'N/A', 'overall': 'N/A', 'accuracy': 0,
-                      'total_tokens': 'N/A', 'early_exits': 'N/A', 'exit_rate': 0}
+                      'total_tokens': 'N/A', 'early_exits': 'N/A', 'usage': 0}
             
             if evaluation and not evaluation.get('error'):
                 if evaluation.get('scores'):
@@ -1281,7 +1277,7 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
                     exit_stats = evaluation['early_exit_stats']
                     metrics['total_tokens'] = exit_stats.get('total_tokens', 'N/A')
                     metrics['early_exits'] = exit_stats.get('early_exits', 'N/A')
-                    metrics['exit_rate'] = exit_stats.get('early_exit_rate', 0)
+                    metrics['usage'] = exit_stats.get('usage', 0)
             
             html_content += f"""
                     <tr class="mode-row expandable" onclick="toggleModeDetails({prompt_idx}, {result_idx})">
@@ -1297,7 +1293,7 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
                         <td>{metrics['accuracy']*100:.1f}%</td>
                         <td>{metrics['total_tokens']}</td>
                         <td>{metrics['early_exits']}</td>
-                        <td>{metrics['exit_rate']*100:.1f}%</td>
+                        <td>{metrics['usage']*100:.1f}%</td>
                     </tr>
                     <tr>
                         <td colspan="10" style="padding: 0; border: none;">
@@ -1309,12 +1305,15 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
                                     <button class="tab-btn" onclick="showTab({prompt_idx}, {result_idx}, 'evaluation')">
                                         📊 Evaluation
                                     </button>
+                                    <button class="tab-btn" onclick="showTab({prompt_idx}, {result_idx}, 'visualize')">
+                                        🗺️ Visualize Exit Layers
+                                    </button>
                                 </div>
                                 
                                 <div class="tab-content active" id="tab-{prompt_idx}-{result_idx}-generation">
                                     <div class="response-box">{html.escape(response)}</div>
                                 </div>
-                                
+                                  
                                 <div class="tab-content" id="tab-{prompt_idx}-{result_idx}-evaluation">
 """
             
@@ -1373,7 +1372,15 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
                                         <div>{html.escape(error_msg)}</div>
                                     </div>
 """
-            
+            html_content += f"""</div>                                
+            <div class="tab-content" id="tab-{prompt_idx}-{result_idx}-visualize">
+                                    {visualize_tokens_by_exit_layer(
+                                        token_strings=evaluation.get('tokens', []),
+                                        exit_layers=evaluation.get('chosen_exit_layers', []),
+                                        early_exit_layer_idxs=evaluation.get('exitable_layers', []),
+                                    )}
+                                
+"""
             html_content += """                                </div>
                             </div>
                         </td>
@@ -1494,6 +1501,7 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
             // Hide all tabs
             document.getElementById(prefix + 'generation').classList.remove('active');
             document.getElementById(prefix + 'evaluation').classList.remove('active');
+            document.getElementById(prefix + 'visualize').classList.remove('active');
             
             // Show selected tab
             document.getElementById(prefix + tab).classList.add('active');
