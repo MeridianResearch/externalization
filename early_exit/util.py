@@ -14,6 +14,11 @@ from peft import PeftModel
 import wandb
 import os
 
+import pandas as pd
+from torch.utils.data import Dataset
+from dataclasses import dataclass
+from typing import List, Any
+
 
 def module_name_is_layer_base(name: str):
     split_by_dots = name.split('.')
@@ -211,3 +216,83 @@ def load_model(model, model_path):
                 loaded_probes += 1
     
     return model
+
+
+
+@dataclass
+class CSVPromptBatch:
+    idx: List[int]
+    story: List[str]
+    question: List[str]
+    full_user_prompt: List[str]
+
+    def __post_init__(self):
+        if len(self.idx) != 1:
+            raise NotImplementedError("Haven't figured out batching for SFT yet. Need to a) mask loss for padding, and b) reshaped sampled prescribed early exits correctly")
+
+
+class CSVPromptDataset(Dataset):
+
+    system_prompt: str
+    task_context: str
+    prefiller: str
+
+    def __init__(self, tsv_path: str, json_path: str = None):
+        # Read as strings and avoid NaNs
+        self.df = pd.read_csv(tsv_path, header=0, dtype=str).fillna("")
+        self.columns = self.df.columns.tolist()
+
+        # Require only these columns; ignore extras like 'answer'
+        missing = {"story", "question"} - set(self.columns)
+        if missing:
+            raise AssertionError(
+                f"Missing required column(s): {missing}. Found columns: {self.columns}"
+            )
+
+        # Load and validate JSON config if provided
+        if json_path:
+            with open(json_path, 'r') as f:
+                config = json.load(f)
+            self.system_prompt = config.get('system_prompt', "")
+            self.task_context = """
+I am going to give you a story and a question about the story. Read the following story carefully, understand the characters' actions and perspectives, then answer the question regarding object locations, character knowledge, and beliefs. 
+Output format (STRICT):
+<think>optional reasoning here.</think>
+ANSWER: <short answer>
+
+Constraints:
+- The <short answer> MUST be all lowercase (no trailing punctuation).
+- Nothing after the ANSWER line.
+"""
+            self.prefiller = config.get('prefiller', "")
+        else:
+            self.system_prompt = ""
+            self.task_context = ""
+            self.prefiller = ""
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        # Return only the fields needed downstream
+        row = self.df.iloc[idx]
+        return idx, {
+            "story": row["story"],
+            "question": row["question"],
+        }
+
+    def generate_prompt(self, batch_item: dict) -> str:
+        return f"{self.task_context}\n\n{batch_item['story']}\n\n{batch_item['question']}"
+
+    def collate_fn(self, batch) -> CSVPromptBatch:
+        # Build exactly what CSVPromptBatch expects (ignore extra CSV columns)
+        idxs = [item[0] for item in batch]
+        stories = [item[1]["story"] for item in batch]
+        questions = [item[1]["question"] for item in batch]
+        full_prompts = [self.generate_prompt(item[1]) for item in batch]
+        return CSVPromptBatch(
+            idx=idxs,
+            story=stories,
+            question=questions,
+            full_user_prompt=full_prompts,
+        )
