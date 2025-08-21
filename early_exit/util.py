@@ -211,3 +211,14 @@ def load_model(model, model_path):
                 loaded_probes += 1
     
     return model
+
+def load_model_from_wandb(model, model_path, artifact_path):
+
+    api = wandb.Api()
+    
+    # Get the artifact
+    artifact = api.artifact(artifact_path)
+    artifact.download(root=model_path)
+    model = load_model(model, model_path)
+    
+    return model
