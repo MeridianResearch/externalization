@@ -10,6 +10,7 @@ import wandb
 from datasets import load_dataset
 
 from early_exit.util import get_model, load_model
+from early_exit.rewards import compute_verification_rewards
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from shared_utils.generate import generate_text
