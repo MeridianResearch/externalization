@@ -8,6 +8,7 @@ import torch
 from torch.optim import Adam
 import wandb
 from datasets import load_dataset
+from dataclasses import dataclass
 
 from early_exit.util import get_model, load_model
 from early_exit.rewards import compute_verification_rewards
@@ -20,9 +21,14 @@ model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
 sft_model_path = "models/early_exit_sft_trained"  # TODO: set path to SFT checkpoint
 
-K = 4  # TODO: number of rollouts per prompt (resource-constrained)
-beta_kl = 0.1  # TODO: KL penalty weight (to sweep)
-lambda_exit = 0.5  # TODO: early-exit average-layer penalty weight (to sweep)
+@dataclass
+class RLHyperparams:
+    k: int = 4  # number of rollouts per prompt (resource-constrained)
+    beta_kl: float = 0.1  # KL penalty weight (to sweep)
+    lambda_exit: float = 0.5  # early-exit average-layer penalty weight (to sweep)
+
+
+RL_HPARAMS = RLHyperparams()
 
 
 # --- Models (schema) ---
@@ -143,7 +149,7 @@ def main_rl_training():
         correct_answer = example["answer"]
 
         # 1) Rollouts (student free-generate K)
-        completions, exit_info = generate_k_completions(student, [prompt], k=K)  # TODO
+        completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k)  # TODO
 
         # 2) Log-probs for KL and rewards (reference vs student)  # TODO: confirm scoring design
 
@@ -151,15 +157,18 @@ def main_rl_training():
         stu_logprobs = compute_token_logprobs_student(student, completions['tokens'], prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None))  # TODO
 
         # 3) Reward components
-        verify = compute_verification_rewards(completions['texts'], [correct_answer] * K)  # TODO
+        verify = compute_verification_rewards(completions['texts'], [correct_answer] * RL_HPARAMS.k)  # TODO
         kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs)  # TODO
         avg_exit_layer = compute_avg_exit_layer(exit_info)  # TODO
 
         # 4) Total reward per sequence (simple linear combination)
-        reward = verify - beta_kl * kl_tokens - lambda_exit * avg_exit_layer  # TODO: tune weights, consider normalization
+        reward = verify - RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer  # TODO: tune weights, consider normalization
 
         # 5) Centering per prompt
-        advantages = center_rewards_per_prompt(reward, batch_size=1, k=K)
+        advantages = center_rewards_per_prompt(reward, batch_size=1, k=RL_HPARAMS.k)
+        # Normalize advantages by their standard deviation to stabilize learning
+        adv_std = advantages.std(unbiased=False) + 1e-8
+        advantages = advantages / adv_std
 
         # 6) Weighted SFT update
         loss = weighted_sft_step(student, completions['tokens'], advantages, optimizer, prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None))  # TODO
