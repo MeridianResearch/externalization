@@ -1,7 +1,7 @@
 .venv/*
 .venv311/*
 wandb/*
-# .gitignore
+.gitignore
 run_sft_train.sh
 tests/.ipynb*
 *checkpoint*
