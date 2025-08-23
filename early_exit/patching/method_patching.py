@@ -28,14 +28,17 @@ def patched_forward_generation(self: EarlyExitModelMixin | PeftModelForCausalLM,
 
     exit_state = ExitLogger(batch_size = input_ids.shape[0])
 
-    assert self.early_exit_mode == 'free_generate'
+    assert self.early_exit_mode == 'free_generate' or self.early_exit_mode == 'rl_train'
     for name, module in self.named_modules():
         if module_name_is_transformer_layer(name):
             # print("Free generate: Patched forward generation called at ", name)
-            assert module.early_exit_mode == 'free_generate'
+            assert module.early_exit_mode == 'free_generate' or self.early_exit_mode == 'rl_train'
             module.exit_state = exit_state
 
     outputs = self.base_model_forward(input_ids, *args, **kwargs)
+
+    if not hasattr(self, '_early_exit_logs') or self._early_exit_logs is None:
+        self._early_exit_logs = []
 
     self._early_exit_logs.append(exit_state)
     
@@ -118,7 +121,7 @@ def patched_generate(self: EarlyExitModelMixin | PeftModelForCausalLM, *args, **
     if self.early_exit_mode == 'off':
         return self.base_model_generate(*args, **kwargs)
 
-    elif self.early_exit_mode == 'free_generate':
+    elif self.early_exit_mode == 'free_generate' or self.early_exit_mode == 'rl_train':
         self._early_exit_logs: List[ExitLogger] = []
         outputs = self.base_model_generate(*args, **kwargs)
         gathered_early_exit_layer_idxs = [ee.readout_layer_idx for ee in self._early_exit_logs]
@@ -163,12 +166,12 @@ def set_transformer_early_exit_mode(model: EarlyExitModelMixin | PeftModelForCau
 
     if mode in ['off', 'sft_teacher']:
         model.disable_adapters()
-    elif mode in ['free_generate', 'sft_student']:
+    elif mode in ['free_generate', 'sft_student', 'rl_train']:
         model.enable_adapters()
     else:
         raise ValueError
 
-    if mode == 'sft_student':
+    if mode in ['sft_student', 'rl_train']:
         model.train()
     else:
         model.eval()
@@ -180,6 +183,7 @@ def set_transformer_early_exit_mode(model: EarlyExitModelMixin | PeftModelForCau
 
     model.forward = (
         model.patched_forward_generation if mode == 'free_generate' else
+        model.patched_forward_generation if mode == 'rl_train' else
         model.patched_forward_sft_student if mode == 'sft_student' else
         model.patched_forward_sft_teacher if mode == 'sft_teacher' else
         model.base_model_forward if mode == 'off' else
