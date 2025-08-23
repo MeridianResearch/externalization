@@ -2,7 +2,7 @@
 
 This module implements an early exit mechanism allowing the model to dynamically decide when to stop processing at intermediate layers rather than always going through all layers 
 
-`early_exit_predictions.py` contain the classes to generate the predictions and `run_early_predictions.py` does the prediction, saves them to a json file and renders the visualization
+`early_exit_predictions.py` contains the classes to generate the predictions and `run_early_predictions.py` does the prediction, saves them to a json file and renders the visualization
 
 ## Execution Modes
 
@@ -61,16 +61,6 @@ Orchestrates experiments by:
 4. Saving results to JSON and generating HTML visualizations
 
 The script automatically tests multiple prompts across all configurations and produces comprehensive analysis outputs.
-
-## How Early Exit Works
-
-The module uses **KL divergence** between intermediate and final layer outputs to determine when to exit:
-
-- **Low KL divergence** = High confidence → Safe to exit early
-- **High KL divergence** = Low confidence → Continue to deeper layers
-- **KL factor parameter** controls sensitivity (higher = more conservative)
-
-Exit decisions are made at predetermined "exitable" layers (e.g., every 5th layer) using a stick-breaking probability process.
 
 ## Usage Example
 
