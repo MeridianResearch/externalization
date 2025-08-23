@@ -1,5 +1,6 @@
 import re
 import torch
+from torch import Tensor as _T
 
 def extract_solution(solution_str, method="strict"):
     assert method in ["strict", "flexible"]
@@ -48,3 +49,25 @@ def compute_verification_rewards(completions_text, correct_answers):
             rewards[i] = 0.0
     
     return rewards
+
+def compute_token_kl_from_logprobs(student_logprobs: _T, reference_logprobs: _T, eps: float = 1e-16) -> _T:
+    """
+    Compute average per-token KL divergence between student and reference distributions over each sequence.
+    
+    This function calculates KL(student || reference) for each token position, then averages across
+    the sequence length to get a single KL value.
+    
+    TODO: Confirm shapes of input tensors.
+    Args:
+        student_logprobs: [batch*K, seq_len, vocab_size] - Log probabilities from student model
+        reference_logprobs: [batch*K, seq_len, vocab_size] - Log probabilities from reference model  
+        eps: float - Small epsilon value to prevent log(0) errors
+        
+    Returns:
+        Single float tensor - Average per-token KL divergence for each sequence in the batch
+    """    
+    student_probs = student_logprobs.exp()
+    reference_probs = reference_logprobs.exp()
+    token_logits_kl_div = (student_probs * ((student_probs + eps) / (reference_probs + eps)).log()).sum(-1)   # [batch * samples, gen len]
+    mean_logit_kl = token_logits_kl_div.mean()
+    return mean_logit_kl
