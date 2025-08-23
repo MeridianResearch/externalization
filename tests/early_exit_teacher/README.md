@@ -1,10 +1,8 @@
 # Early Exit Teacher Module
 
-This module implements an early exit mechanism for transformer models, allowing the model to dynamically decide when to stop processing at intermediate layers rather than always going through all layers.
+This module implements an early exit mechanism allowing the model to dynamically decide when to stop processing at intermediate layers rather than always going through all layers 
 
-## Overview
-
-The early exit mechanism enables efficient inference by allowing models to exit at earlier layers when confident about predictions. This reduces computational costs while maintaining accuracy.
+`early_exit_predictions.py` contain the classes to generate the predictions and `run_early_predictions.py` does the prediction, saves them to a json file and renders the visualization
 
 ## Execution Modes
 
@@ -16,7 +14,7 @@ The module supports three modes of operation:
 
 ## Core Components
 
-### `early_exit_predictions.py`
+### 1. `early_exit_predictions.py`
 **Main inference and generation module**
 
 Key classes and functions:
@@ -39,7 +37,7 @@ Key classes and functions:
   - `format_and_tokenize_input()`: Prepares prompts for model input
   - `evaluate_response()`: Analyzes generation quality and exit statistics
 
-### `visualization.py`
+### 2. `visualization.py`
 **Visualization tools for analyzing early exit behavior**
 
 Creates interactive HTML dashboards showing:
@@ -53,7 +51,7 @@ Key functions:
 - `save_results_json()` / `load_results_json()`: Data persistence
 - `create_html_visualization()`: Single-prompt visualization
 
-### `run_early_predictions.py`
+### 3. `run_early_predictions.py`
 **Main experiment runner**
 
 Orchestrates experiments by:
