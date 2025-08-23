@@ -1,8 +1,6 @@
 # Early Exit Teacher Module
 
-This module implements an early exit mechanism allowing the model to dynamically decide when to stop processing at intermediate layers rather than always going through all layers 
-
-`early_exit_predictions.py` contains the classes to generate the predictions and `run_early_predictions.py` does the prediction, saves them to a json file and renders the visualization. The [visualization](https://htmlpreview.github.io/?https://github.com/MeridianResearch/externalization/blob/visualization/early_exit_teacher/visualization/early_exit_analysis.html) and [code](https://github.com/MeridianResearch/externalization/blob/visualization/early_exit_teacher/early_exit_predictions.py) consists of three modes:
+This module implements an early exit mechanism allowing the model to dynamically decide when to stop processing at intermediate layers rather than always going through all layers. `early_exit_predictions.py` contains the classes to generate the predictions and `run_early_predictions.py` does the prediction, saves them to a json file and renders the visualization. The [visualization](https://htmlpreview.github.io/?https://github.com/MeridianResearch/externalization/blob/visualization/early_exit_teacher/visualizations/early_exit_analysis.html) and [code](https://github.com/MeridianResearch/externalization/blob/visualization/early_exit_teacher/early_exit_predictions.py) consists of three modes:
 
 ## Execution Modes
 
