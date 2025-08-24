@@ -40,7 +40,7 @@ Key classes and functions:
 
 Creates interactive HTML dashboards showing:
 
-- **Token-level visualization**: Color-coded tokens based on exit layer (blue=early, red=late)
+- **Token-level visualization**: Color-coded tokens based on exit layer (red=early, blue=late)
 - **Statistical analysis**: Exit rates, layer distributions, and performance metrics
 - **Multi-prompt comparison**: Aggregate statistics across different prompts and configurations
 
