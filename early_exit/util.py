@@ -211,3 +211,36 @@ def load_model(model, model_path):
                 loaded_probes += 1
     
     return model
+
+
+def load_model_from_wandb(model, model_path: str, artifact_path: str):
+    """
+    Download a model artifact from Weights & Biases and load it into the given model.
+
+    Args:
+        model: The instantiated base model to load weights into.
+        model_path: Local directory where the artifact will be downloaded/extracted.
+        artifact_path: Fully-qualified WandB artifact path, e.g.
+            "entity/project/artifact-name:version".
+
+    Returns:
+        The model with weights/adapters loaded.
+    """
+    os.makedirs(model_path, exist_ok=True)
+
+    artifact_dir = model_path
+    try:
+        # If a run is active, prefer use_artifact; otherwise use public API
+        if wandb.run is not None:
+            artifact = wandb.use_artifact(artifact_path, type="model")
+            artifact_dir = artifact.download(root=model_path)
+        else:
+            api = wandb.Api()
+            artifact = api.artifact(artifact_path, type="model")
+            artifact_dir = artifact.download(root=model_path)
+    except Exception as e:
+        print(f"Warning: Failed to download WandB artifact '{artifact_path}': {e}")
+        print("Proceeding to load from existing files in model_path if present.")
+
+    # Load the weights (either from downloaded directory or pre-existing files)
+    return load_model(model, artifact_dir)

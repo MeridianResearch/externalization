@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo • Externalization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1100px;
+            width: 100%;
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            padding: 32px;
+        }
+
+        h1 {
+            color: #000000;
+            font-size: 2.0em;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 20px;
+            line-height: 1.2;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            appearance: none;
+            border: 1px solid #dee2e6;
+            background: #f8f9fa;
+            color: #000000;
+            padding: 10px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn:hover {
+            background: #eef1f4;
+        }
+
+        /* Emphasized Generate button */
+        #generateBtn {
+            background: #228be6;
+            border-color: #1c7ed6;
+            color: #ffffff;
+            padding: 12px 18px;
+            font-size: 1.05em;
+            font-weight: 600;
+            border-radius: 12px;
+            box-shadow: 0 6px 16px rgba(34, 139, 230, 0.35);
+        }
+
+        #generateBtn:hover {
+            background: #1c7ed6;
+        }
+
+        #generateBtn:active {
+            transform: translateY(1px);
+        }
+
+        .select {
+            appearance: none;
+            border: 1px solid #dee2e6;
+            background: #ffffff;
+            color: #212529;
+            padding: 10px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        .hint {
+            text-align: center;
+            color: #495057;
+            margin-bottom: 14px;
+            font-size: 0.95em;
+        }
+
+        .error {
+            text-align: center;
+            color: #c92a2a;
+            margin-bottom: 14px;
+            font-size: 0.95em;
+            display: none;
+        }
+
+        .columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 900px) {
+            .columns {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 12px;
+            padding: 16px;
+            min-height: 200px;
+        }
+
+        .panel h2 {
+            font-size: 1.1em;
+            margin-bottom: 10px;
+            color: #000000;
+        }
+
+        .prompt-panel {
+            justify-self: stretch;
+            width: 100%;
+            max-width: 100%;
+            min-height: auto;
+        }
+
+        /* Make the prompt text box visually fit its content while panel stays half-width */
+        .prompt-panel .content {
+            display: inline-block;
+            width: fit-content;
+            max-width: 100%;
+            padding: 8px 10px;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+        }
+
+        /* Subtle cohesion tweaks */
+        .panel {
+            background: #ffffff;
+        }
+        .generation-panel .content {
+            background: #ffffff;
+        }
+
+        .content {
+            white-space: pre-wrap;
+            color: #212529;
+            line-height: 1.6;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
+        .token {
+            display: inline;
+            padding: 0 2px;
+            border-radius: 4px;
+            margin-right: 1px;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 16px;
+            align-items: center;
+            justify-content: center;
+            margin: 8px 0 18px 0;
+            color: #495057;
+            font-size: 0.95em;
+        }
+
+        .legend-label {
+            font-weight: 600;
+            margin-right: 6px;
+            color: #343a40;
+        }
+
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 4px;
+            display: inline-block;
+            border: 1px solid #dee2e6;
+        }
+
+        .footer-note {
+            text-align: center;
+            color: #868e96;
+            font-size: 0.85em;
+            margin-top: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Demo: We aim to limit amount of calculations model spends in hidden internal layers</h1>
+
+        <div id="error" class="error">Could not load <code>run_log.csv</code> from this folder.</div>
+
+        
+
+        <div class="columns">
+            <div class="panel prompt-panel">
+                <h2>Selection</h2>
+                <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                    <select id="categorySelect" class="select"></select>
+                    <select id="promptSelect" class="select" disabled></select>
+                    <button id="generateBtn" class="btn" type="button">Generate</button>
+                </div>
+                <div id="prompt" class="content" style="display: none;" aria-hidden="true">—</div>
+            </div>
+            <div class="panel generation-panel">
+                <h2>Generation</h2>
+                <div class="legend" style="justify-content: flex-start; margin-top: 0; margin-bottom: 10px;">
+                    <span class="legend-label">Legend:</span>
+                    <span class="legend-item"><span class="legend-swatch" style="background:#ced4da"></span>never exited</span>
+                    <span class="legend-item"><span class="legend-swatch" style="background:#a5d8ff"></span>exited at level 25</span>
+                    <span class="legend-item"><span class="legend-swatch" style="background:#b2f2bb"></span>exited at level 20</span>
+                    <span class="legend-item"><span class="legend-swatch" style="background:#ffd8a8"></span>exited at level 15</span>
+                    <span class="legend-item"><span class="legend-swatch" style="background:#ffc9c9"></span>exited at level 5</span>
+                </div>
+                <div id="generation" class="content">—</div>
+            </div>
+        </div>
+
+        
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script>
+        const promptEl = document.getElementById('prompt');
+        const generationEl = document.getElementById('generation');
+        const errorEl = document.getElementById('error');
+        const STREAM_DELAY_MS = 35;
+        let currentStreamRunId = 0;
+
+        function displayData(row) {
+            const prompt = row && (row.prompt || row['prompt']);
+            promptEl.textContent = prompt ? String(prompt) : '—';
+
+            const rawTokens = row && (row.gen_tokens || row['gen_tokens']);
+            const rawExits = row && (row.exit_layers || row['exit_layers']);
+
+            const tokens = parseTokens(rawTokens);
+            const exits = parseExitLayers(rawExits);
+            // Don't auto-stream; wait for user click
+            window.__cachedTokens = tokens;
+            window.__cachedExits = exits;
+        }
+
+        let __allRows = [];
+        let __rowsByCategory = new Map();
+
+        function parseTokens(raw) {
+            if (!raw) return [];
+            try {
+                const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                return Array.isArray(arr) ? arr.map(t => String(t)) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function parseExitLayers(raw) {
+            if (!raw) return [];
+            const asString = String(raw).trim();
+            try {
+                return JSON.parse(asString);
+            } catch (e) {
+                try {
+                    const replaced = asString.replace(/\bInfinity\b/g, '"Infinity"');
+                    const arr = JSON.parse(replaced);
+                    return Array.isArray(arr) ? arr.map(v => (typeof v === 'number' ? String(v) : String(v))) : [];
+                } catch (e2) {
+                    return [];
+                }
+            }
+        }
+
+        function colorForExit(value) {
+            const key = String(value);
+            if (key === 'Infinity') return '#ced4da';      // pastel gray
+            if (key === '25' || key === '25.0') return '#a5d8ff'; // pastel blue
+            if (key === '20' || key === '20.0') return '#b2f2bb'; // pastel green
+            if (key === '15' || key === '15.0') return '#ffd8a8'; // pastel orange
+            if (key === '5' || key === '5.0') return '#ffc9c9';   // pastel red
+            return '#dee2e6';
+        }
+
+        function cleanToken(input) {
+            let token = String(input);
+            // Strip outer quotes and escaped quotes
+            token = token.replace(/^"|"$/g, '');
+            token = token.replace(/\\"/g, '"');
+            // Handle unicode-like markers from serialized arrays
+            token = token.replace(/\\u0120/g, ' ');  // leading space marker
+            token = token.replace(/\\u010a/g, '\n'); // newline marker
+            // GPT-BPE style markers
+            token = token.replace(/Ċ/g, '\n');       // newline
+            token = token.replace(/Ġ/g, ' ');         // leading space
+            // SentencePiece-style underscore
+            token = token.replace(/▁/g, ' ');
+            // Drop special control tags if present
+            if (token.includes('<｜') || token.includes('｜>')) return '';
+            // Remove non-printable control characters
+            token = token.replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '');
+            return token;
+        }
+
+        function renderColoredTokens(tokens, exits) {
+            generationEl.innerHTML = '';
+            const count = Math.min(tokens.length, exits.length);
+            for (let i = 0; i < count; i++) {
+                const span = document.createElement('span');
+                span.className = 'token';
+                span.style.backgroundColor = colorForExit(exits[i]);
+                span.textContent = cleanToken(tokens[i]);
+                generationEl.appendChild(span);
+            }
+        }
+
+        function streamColoredTokens(tokens, exits) {
+            currentStreamRunId += 1;
+            const runId = currentStreamRunId;
+            generationEl.innerHTML = '';
+            const count = Math.min(tokens.length, exits.length);
+
+            function appendNext(i) {
+                if (runId !== currentStreamRunId) return; // cancelled by a newer stream
+                if (i >= count) return;
+
+                const cleaned = cleanToken(tokens[i]);
+                if (cleaned) {
+                    const span = document.createElement('span');
+                    span.className = 'token';
+                    span.style.backgroundColor = colorForExit(exits[i]);
+                    span.textContent = cleaned;
+                    generationEl.appendChild(span);
+                }
+
+                setTimeout(() => appendNext(i + 1), STREAM_DELAY_MS);
+            }
+
+            appendNext(0);
+        }
+
+        function parseCsvText(text) {
+            const result = Papa.parse(text, { header: true, skipEmptyLines: true });
+            if (result && result.data && result.data.length > 0) {
+                __allRows = result.data;
+                __rowsByCategory = groupRowsByCategory(__allRows);
+                populateCategorySelect(__rowsByCategory);
+                populatePromptSelect([]);
+                // Do not display anything until user selects from the dropdown
+                promptEl.textContent = '—';
+                generationEl.textContent = '—';
+            }
+        }
+
+        async function loadLocalCsv() {
+            try {
+                errorEl.style.display = 'none';
+                // Cancel any in-flight streaming from previous loads
+                currentStreamRunId += 1;
+                const res = await fetch('./run_log.csv', { cache: 'no-store' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const text = await res.text();
+                parseCsvText(text);
+            } catch (e) {
+                errorEl.style.display = 'block';
+            }
+        }
+
+        // Wire up Generate button
+        document.addEventListener('DOMContentLoaded', () => {
+            const btn = document.getElementById('generateBtn');
+            const promptSelect = document.getElementById('promptSelect');
+            const categorySelect = document.getElementById('categorySelect');
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    if (Array.isArray(window.__cachedTokens) && Array.isArray(window.__cachedExits)) {
+                        streamColoredTokens(window.__cachedTokens, window.__cachedExits);
+                    }
+                });
+            }
+            if (categorySelect) {
+                categorySelect.addEventListener('change', (e) => {
+                    const cat = String(e.target.value);
+                    const rows = __rowsByCategory.get(cat) || [];
+                    populatePromptSelect(rows);
+                    promptSelect.disabled = false;
+                    // Reset cached data and UI
+                    window.__cachedTokens = [];
+                    window.__cachedExits = [];
+                    promptEl.textContent = '—';
+                    generationEl.textContent = '—';
+                });
+            }
+            if (promptSelect) {
+                promptSelect.addEventListener('change', (e) => {
+                    const idx = Number(e.target.value);
+                    const cat = categorySelect ? String(categorySelect.value) : '';
+                    const rows = __rowsByCategory.get(cat) || [];
+                    const row = rows[idx];
+                    if (row) {
+                        displayData(row);
+                        // Reset selection to placeholder so collapsed state shows 'Select prompt'
+                        promptSelect.selectedIndex = 0;
+                    }
+                });
+            }
+        });
+
+        function populatePromptSelect(rows) {
+            const select = document.getElementById('promptSelect');
+            if (!select) return;
+            select.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Select prompt';
+            placeholder.disabled = true;
+            placeholder.selected = true;
+            select.appendChild(placeholder);
+            rows.forEach((row, index) => {
+                const option = document.createElement('option');
+                const label = String(row.prompt || row['prompt'] || `Row ${index+1}`).slice(0, 120);
+                option.value = String(index);
+                option.textContent = label;
+                select.appendChild(option);
+            });
+        }
+
+        function populateCategorySelect(map) {
+            const select = document.getElementById('categorySelect');
+            if (!select) return;
+            select.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Select a category…';
+            placeholder.disabled = true;
+            placeholder.selected = true;
+            select.appendChild(placeholder);
+            Array.from(map.keys()).forEach((cat) => {
+                const option = document.createElement('option');
+                option.value = cat;
+                option.textContent = String(cat || 'uncategorized');
+                select.appendChild(option);
+            });
+        }
+
+        function groupRowsByCategory(rows) {
+            const m = new Map();
+            rows.forEach((row) => {
+                const cat = String(row.category || row['category'] || '');
+                if (!m.has(cat)) m.set(cat, []);
+                m.get(cat).push(row);
+            });
+            return m;
+        }
+
+        // Auto-load the local CSV on page load; if it fails, show error.
+        loadLocalCsv();
+    </script>
+</body>
+</html>
+
