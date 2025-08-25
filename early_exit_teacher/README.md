@@ -4,11 +4,10 @@ This module implements an early exit mechanism allowing the model to dynamically
 
 ## Execution Modes
 
-The module supports three modes of operation:
+The module supports two modes of operation:
 
 1. **Normal Generation**: Standard full-depth generation without early exits
-2. **Unfrozen Mode**: Early exit without freezing the residual stream 
-3. **Frozen Residual Mode**: Early exit with frozen residual stream after exiting
+1. **Frozen Residual Mode**: Early exit with frozen residual stream after exiting
 
 ## Core Components
 
