@@ -170,6 +170,16 @@
             word-break: break-word;
         }
 
+        /* Clamp prompt to 3 lines when longer than 5 lines */
+        .prompt-panel #prompt.clamp-3 {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            line-clamp: 3;
+            overflow: hidden;
+            white-space: normal;
+        }
+
         .token {
             display: inline;
             padding: 0 2px;
@@ -232,13 +242,13 @@
                     <select id="promptSelect" class="select" disabled></select>
                     <button id="generateBtn" class="btn" type="button">Generate</button>
                 </div>
-                <div id="prompt" class="content" style="display: none;" aria-hidden="true">—</div>
+                <div id="prompt" class="content" aria-live="polite">—</div>
             </div>
             <div class="panel generation-panel">
                 <h2>Generation</h2>
                 <div class="legend" style="justify-content: flex-start; margin-top: 0; margin-bottom: 10px;">
                     <span class="legend-label">Legend:</span>
-                    <span class="legend-item"><span class="legend-swatch" style="background:#ced4da"></span>never exited</span>
+                    <span class="legend-item"><span class="legend-swatch" style="background:#ced4da"></span>no early exit</span>
                     <span class="legend-item"><span class="legend-swatch" style="background:#a5d8ff"></span>exited at level 25</span>
                     <span class="legend-item"><span class="legend-swatch" style="background:#b2f2bb"></span>exited at level 20</span>
                     <span class="legend-item"><span class="legend-swatch" style="background:#ffd8a8"></span>exited at level 15</span>
@@ -263,6 +273,7 @@
         function displayData(row) {
             const prompt = row && (row.prompt || row['prompt']);
             promptEl.textContent = prompt ? String(prompt) : '—';
+            applyPromptClamp();
 
             const rawTokens = row && (row.gen_tokens || row['gen_tokens']);
             const rawExits = row && (row.exit_layers || row['exit_layers']);
@@ -420,6 +431,7 @@
                     window.__cachedExits = [];
                     promptEl.textContent = '—';
                     generationEl.textContent = '—';
+                    applyPromptClamp();
                 });
             }
             if (promptSelect) {
@@ -430,8 +442,7 @@
                     const row = rows[idx];
                     if (row) {
                         displayData(row);
-                        // Reset selection to placeholder so collapsed state shows 'Select prompt'
-                        promptSelect.selectedIndex = 0;
+                        // Keep the selected option visible like the category dropdown
                     }
                 });
             }
@@ -486,6 +497,34 @@
 
         // Auto-load the local CSV on page load; if it fails, show error.
         loadLocalCsv();
+
+        function applyPromptClamp() {
+            if (!promptEl) return;
+            // Ensure we measure the full content, not the already-clamped version
+            promptEl.classList.remove('clamp-3');
+            // Temporarily ensure the element is measurable
+            const style = window.getComputedStyle(promptEl);
+            let lineHeightPx = style.lineHeight;
+            let lineHeight;
+            if (lineHeightPx === 'normal') {
+                const fontSizePx = style.fontSize;
+                const fontSize = parseFloat(fontSizePx || '16');
+                lineHeight = 1.6 * fontSize; // fallback to 1.6em as defined in CSS
+            } else {
+                lineHeight = parseFloat(lineHeightPx);
+            }
+            if (!lineHeight || isNaN(lineHeight) || lineHeight <= 0) {
+                lineHeight = 24; // safe fallback
+            }
+            // Force layout to get accurate scrollHeight
+            const scrollH = promptEl.scrollHeight;
+            const linesApprox = Math.round(scrollH / lineHeight);
+            if (linesApprox > 5) {
+                promptEl.classList.add('clamp-3');
+            } else {
+                promptEl.classList.remove('clamp-3');
+            }
+        }
     </script>
 </body>
 </html>
