@@ -9,6 +9,7 @@ from torch.optim import Adam
 import wandb
 from datasets import load_dataset
 from dataclasses import dataclass
+from typing import List, Optional
 
 from early_exit.util import get_model, load_model, load_model_from_wandb
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student
@@ -23,11 +24,18 @@ sft_model_path = "models/early_exit_sft_trained"  # TODO: set path to SFT checkp
 
 @dataclass
 class RLHyperparams:
-    batch_size: int = 1  # for simplicity, keep batch_size=1 
-    k: int = 4  # number of rollouts per prompt (resource-constrained)
-    beta_kl: float = 0.1  # KL penalty weight (to sweep)
-    lambda_exit: float = 0.5  # early-exit average-layer penalty weight (to sweep)
+    """
+    Hyperparameters for RL training
 
+    - batch_size: number of p rompts per batch
+    - k: number of rollouts per prompt
+    - beta_kl: weight for KL penalty
+    - lambda_exit: weight for average exit layer penalty
+    """
+    batch_size: int = 1
+    k: int = 4
+    beta_kl: float = 0.1
+    lambda_exit: float = 0.5
 
 RL_HPARAMS = RLHyperparams()
 
@@ -51,16 +59,21 @@ dataset = load_dataset("gsm8k", "main")  # TODO: verify/parse answer format
 
 
 # --- Core schema functions ---
-def generate_k_completions(model, prompts, k: int):
+def generate_k_completions(model, prompt, k: int):
     """
-    TODO: Free-generate K completions per prompt with early exits enabled.
-    Returns:
-        completions:
-            - tokens: LongTensor [batch*K, seq_len]  (student-sampled sequences)
-            - texts: list[str] length batch*K
-        exit_info:
-            - avg_exit_layer: FloatTensor [batch*K] (average exit layer per sequence)
-            - prescribed_exit_layers: LongTensor [batch*K, seq_len] (optional; for re-scoring)
+    Free-generate K completions per prompt with early exits enabled.
+
+    Expected outputs (used later in the pipeline):
+    - completions:
+        - tokens: LongTensor of shape [batch*K, seq_len]; dtype=torch.long
+        - texts: list[str] of length batch*K
+    - exit_info:
+        - avg_exit_layer: FloatTensor of shape [batch*K]; typically in [0, total_exitable_layers] or normalized to [0,1]
+        - prescribed_exit_layers: Optional[LongTensor] of shape [batch*K, seq_len] for re-scoring
+
+    Typical ranges:
+    - seq_len: 16–512 depending on generation config
+    - avg_exit_layer (normalized): 0.0 (early) → 1.0 (late)
     """
     # TODO: set_transformer_early_exit_mode(model, 'free_generate') and call generate_text(...)
     raise NotImplementedError("TODO: implement generate_k_completions")
@@ -97,6 +110,58 @@ def compute_sequence_loglik_student(student_log_likelihoods):
     Returns: FloatTensor [batch*K].
     """
     return student_log_likelihoods.sum(-1)
+
+
+@dataclass
+class RolloutBatch:
+    """
+    Container with runtime checks for rollout tensors and metadata.
+
+    - tokens: LongTensor [batch*K, seq_len]
+    - texts: list[str] length batch*K
+    - ref_logprobs: FloatTensor [batch*K, seq_len]
+    - stu_logprobs: FloatTensor [batch*K, seq_len]
+    - prescribed_exit_layers (optional): LongTensor [batch*K, seq_len]
+    - avg_exit_layer (optional): FloatTensor [batch*K]
+    """
+    tokens: torch.Tensor
+    texts: List[str]
+    ref_logprobs: torch.Tensor
+    stu_logprobs: torch.Tensor
+    prescribed_exit_layers: Optional[torch.Tensor] = None
+    avg_exit_layer: Optional[torch.Tensor] = None
+
+    def __post_init__(self) -> None:
+        # tokens
+        assert isinstance(self.tokens, torch.Tensor), "tokens must be a torch.Tensor"
+        assert self.tokens.dtype == torch.long, "tokens must be dtype torch.long"
+        assert self.tokens.dim() == 2, "tokens must be 2D [batch*K, seq_len]"
+        batchK, seq_len = self.tokens.shape
+
+        # texts
+        assert isinstance(self.texts, list), "texts must be a list[str]"
+        assert len(self.texts) == batchK, "len(texts) must equal batch*K"
+        assert all(isinstance(t, str) for t in self.texts), "texts list must contain only strings"
+
+        # logprobs
+        for name, lp in (('ref_logprobs', self.ref_logprobs), ('stu_logprobs', self.stu_logprobs)):
+            assert isinstance(lp, torch.Tensor), f"{name} must be a torch.Tensor"
+            assert torch.is_floating_point(lp), f"{name} must be a floating tensor"
+            assert lp.dim() == 2 and tuple(lp.shape) == (batchK, seq_len), f"{name} must be [batch*K, seq_len]"
+
+        # prescribed exit layers (optional)
+        if self.prescribed_exit_layers is not None:
+            pel = self.prescribed_exit_layers
+            assert isinstance(pel, torch.Tensor), "prescribed_exit_layers must be a torch.Tensor"
+            assert pel.dtype == torch.long, "prescribed_exit_layers must be dtype torch.long"
+            assert pel.dim() == 2 and tuple(pel.shape) == (batchK, seq_len), "prescribed_exit_layers must be [batch*K, seq_len]"
+
+        # avg exit layer (optional)
+        if self.avg_exit_layer is not None:
+            ael = self.avg_exit_layer
+            assert isinstance(ael, torch.Tensor), "avg_exit_layer must be a torch.Tensor"
+            assert torch.is_floating_point(ael), "avg_exit_layer must be a floating tensor"
+            assert ael.dim() == 1 and tuple(ael.shape) == (batchK,), "avg_exit_layer must be [batch*K]"
 
 def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
     
@@ -153,6 +218,16 @@ def main_rl_training():
 
         ref_logprobs = compute_token_logprobs_reference(reference, completions['tokens'])  # TODO
         stu_logprobs = compute_token_logprobs_student(student, completions['tokens'], prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None))  # TODO
+
+        # Runtime validation of rollout tensors (dtype/shape checks)
+        _ = RolloutBatch(
+            tokens=completions['tokens'],
+            texts=completions['texts'],
+            ref_logprobs=ref_logprobs,
+            stu_logprobs=stu_logprobs,
+            prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None),
+            avg_exit_layer=exit_info.get('avg_exit_layer', None),
+        )
 
         # 3) Reward components
         verify = compute_verification_rewards(completions['texts'], [correct_answer] * RL_HPARAMS.k)  # TODO
