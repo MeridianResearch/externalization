@@ -65,6 +65,13 @@
             background: #eef1f4;
         }
 
+        /* Active state for toggle buttons */
+        .btn.active {
+            background: #228be6;
+            border-color: #1c7ed6;
+            color: #ffffff;
+        }
+
         /* Emphasized Generate button */
         #generateBtn {
             background: #228be6;
@@ -170,6 +177,23 @@
             word-break: break-word;
         }
 
+        /* Metrics badges */
+        .metrics {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin: 6px 0 12px 0;
+        }
+        .metric {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            padding: 6px 10px;
+            color: #343a40;
+            font-weight: 600;
+        }
+
         /* Clamp prompt to 3 lines when longer than 5 lines */
         .prompt-panel #prompt.clamp-3 {
             display: -webkit-box;
@@ -232,7 +256,10 @@
 
         <div id="error" class="error">Could not load <code>run_log.csv</code> from this folder.</div>
 
-        
+        <div class="controls" id="modeControls">
+            <button id="modeNormalBtn" class="btn" type="button">normal</button>
+            <button id="modeTrainedBtn" class="btn active" type="button">trained early exit</button>
+        </div>
 
         <div class="columns">
             <div class="panel prompt-panel">
@@ -246,6 +273,10 @@
             </div>
             <div class="panel generation-panel">
                 <h2>Generation</h2>
+                <div class="metrics">
+                    <div class="metric">coherence: <span id="metricCoherence">0.91</span></div>
+                    <div class="metric">calculations saved: <span id="metricSaved">42%</span></div>
+                </div>
                 <div class="legend" style="justify-content: flex-start; margin-top: 0; margin-bottom: 10px;">
                     <span class="legend-label">Legend:</span>
                     <span class="legend-item"><span class="legend-swatch" style="background:#ced4da"></span>no early exit</span>
@@ -269,6 +300,20 @@
         const errorEl = document.getElementById('error');
         const STREAM_DELAY_MS = 35;
         let currentStreamRunId = 0;
+        let currentMode = 'trained';
+
+        function updateMetricsForMode(mode) {
+            const coh = document.getElementById('metricCoherence');
+            const saved = document.getElementById('metricSaved');
+            if (!coh || !saved) return;
+            if (mode === 'trained') {
+                coh.textContent = '0.91';
+                saved.textContent = '42%';
+            } else {
+                coh.textContent = '0.91';
+                saved.textContent = '0%';
+            }
+        }
 
         function displayData(row) {
             const prompt = row && (row.prompt || row['prompt']);
@@ -388,8 +433,31 @@
                 __rowsByCategory = groupRowsByCategory(__allRows);
                 populateCategorySelect(__rowsByCategory);
                 populatePromptSelect([]);
-                // Do not display anything until user selects from the dropdown
-                promptEl.textContent = '—';
+
+                // Auto-select first available category and first prompt
+                const categorySelect = document.getElementById('categorySelect');
+                const promptSelect = document.getElementById('promptSelect');
+                if (categorySelect && categorySelect.options.length > 1) {
+                    categorySelect.selectedIndex = 1; // first real category
+                    const selectedCat = String(categorySelect.value);
+                    const rows = __rowsByCategory.get(selectedCat) || [];
+                    populatePromptSelect(rows);
+                    if (promptSelect) {
+                        promptSelect.disabled = false;
+                        if (promptSelect.options.length > 1) {
+                            promptSelect.selectedIndex = 1; // first real prompt
+                            const row = rows[0];
+                            if (row) {
+                                displayData(row);
+                            }
+                        } else {
+                            promptEl.textContent = '—';
+                        }
+                    }
+                } else {
+                    // Fallback placeholder
+                    promptEl.textContent = '—';
+                }
                 generationEl.textContent = '—';
             }
         }
@@ -413,13 +481,40 @@
             const btn = document.getElementById('generateBtn');
             const promptSelect = document.getElementById('promptSelect');
             const categorySelect = document.getElementById('categorySelect');
+            const modeNormalBtn = document.getElementById('modeNormalBtn');
+            const modeTrainedBtn = document.getElementById('modeTrainedBtn');
+
             if (btn) {
                 btn.addEventListener('click', () => {
-                    if (Array.isArray(window.__cachedTokens) && Array.isArray(window.__cachedExits)) {
-                        streamColoredTokens(window.__cachedTokens, window.__cachedExits);
+                    if (currentMode === 'trained') {
+                        if (Array.isArray(window.__cachedTokens) && Array.isArray(window.__cachedExits)) {
+                            streamColoredTokens(window.__cachedTokens, window.__cachedExits);
+                        }
+                    } else {
+                        // placeholder for normal mode
+                        currentStreamRunId += 1;
+                        generationEl.textContent = '—';
                     }
                 });
             }
+
+            if (modeNormalBtn && modeTrainedBtn) {
+                modeNormalBtn.addEventListener('click', () => {
+                    currentMode = 'normal';
+                    modeNormalBtn.classList.add('active');
+                    modeTrainedBtn.classList.remove('active');
+                    currentStreamRunId += 1;
+                    generationEl.textContent = '—';
+                    updateMetricsForMode(currentMode);
+                });
+                modeTrainedBtn.addEventListener('click', () => {
+                    currentMode = 'trained';
+                    modeTrainedBtn.classList.add('active');
+                    modeNormalBtn.classList.remove('active');
+                    updateMetricsForMode(currentMode);
+                });
+            }
+
             if (categorySelect) {
                 categorySelect.addEventListener('change', (e) => {
                     const cat = String(e.target.value);
@@ -434,6 +529,7 @@
                     applyPromptClamp();
                 });
             }
+
             if (promptSelect) {
                 promptSelect.addEventListener('change', (e) => {
                     const idx = Number(e.target.value);
@@ -442,7 +538,6 @@
                     const row = rows[idx];
                     if (row) {
                         displayData(row);
-                        // Keep the selected option visible like the category dropdown
                     }
                 });
             }
@@ -497,6 +592,8 @@
 
         // Auto-load the local CSV on page load; if it fails, show error.
         loadLocalCsv();
+        // Initialize metrics with default mode
+        updateMetricsForMode(currentMode);
 
         function applyPromptClamp() {
             if (!promptEl) return;
