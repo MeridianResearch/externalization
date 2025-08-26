@@ -61,22 +61,37 @@ dataset = load_dataset("gsm8k", "main")  # TODO: verify/parse answer format
 # --- Core schema functions ---
 def generate_k_completions(model, prompt, k: int):
     """
-    Free-generate K completions per prompt with early exits enabled.
-
-    Expected outputs (used later in the pipeline):
-    - completions:
-        - tokens: LongTensor of shape [batch*K, seq_len]; dtype=torch.long
-        - texts: list[str] of length batch*K
-    - exit_info:
-        - avg_exit_layer: FloatTensor of shape [batch*K]; typically in [0, total_exitable_layers] or normalized to [0,1]
-        - prescribed_exit_layers: Optional[LongTensor] of shape [batch*K, seq_len] for re-scoring
-
-    Typical ranges:
-    - seq_len: 16–512 depending on generation config
-    - avg_exit_layer (normalized): 0.0 (early) → 1.0 (late)
+    Free-generate K completions for a single prompt.
+    Returns:
+    - completions: {'tokens': List[Tensor], 'texts': list[str]}
+    - exit_info: {'gathered_exit_layers': List[Tensor]}
     """
-    # TODO: set_transformer_early_exit_mode(model, 'free_generate') and call generate_text(...)
-    raise NotImplementedError("TODO: implement generate_k_completions")
+    set_transformer_early_exit_mode(model, 'free_generate')
+
+    texts = []
+    tokens_list = []
+    gathered_exit_layers_list = []
+
+    for _ in range(k):
+        with torch.no_grad():
+            decoded_text, outputs = generate_text(
+                model=model,
+                prompt=prompt,
+                system_prompt="",
+                prefiller="",
+                tokenizer=tokenizer,
+                generation_config=config['generation'],
+                device=device,
+            )
+
+        sequences, gathered_exit_layers = outputs
+        tokens_list.append(sequences)
+        texts.append(decoded_text)
+        gathered_exit_layers_list.append(gathered_exit_layers)
+
+    completions = {'tokens': tokens_list, 'texts': texts}
+    exit_info = {'gathered_exit_layers': gathered_exit_layers_list}
+    return completions, exit_info
 
 def center_rewards_per_prompt(rewards, batch_size: int, k: int):
     """
@@ -196,7 +211,7 @@ def main_rl_training():
         correct_answer = example["answer"]
 
         # 1) Rollouts (student free-generate K)
-        completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k)  # TODO
+        completions, exit_info = generate_k_completions(student, prompt, k=RL_HPARAMS.k)  # TODO
 
         # 2) Log-probs for KL and rewards (reference vs student)  # TODO: confirm scoring design
 
