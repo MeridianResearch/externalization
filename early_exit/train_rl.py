@@ -10,8 +10,8 @@ import wandb
 from datasets import load_dataset
 from dataclasses import dataclass
 
-from early_exit.util import get_model, load_model
-from early_exit.rewards import compute_verification_rewards
+from early_exit.util import get_model, load_model, load_model_from_wandb
+from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from shared_utils.generate import generate_text
@@ -23,6 +23,7 @@ sft_model_path = "models/early_exit_sft_trained"  # TODO: set path to SFT checkp
 
 @dataclass
 class RLHyperparams:
+    batch_size: int = 1  # for simplicity, keep batch_size=1 
     k: int = 4  # number of rollouts per prompt (resource-constrained)
     beta_kl: float = 0.1  # KL penalty weight (to sweep)
     lambda_exit: float = 0.5  # early-exit average-layer penalty weight (to sweep)
@@ -37,8 +38,9 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
-# TODO: Load SFT checkpoint weights for student
-# student = load_model(student, sft_model_path)  # TODO
+# TODO: Change artifact path to sft trained gsm-8k model
+student = load_model_from_wandb(student, model_path = "models/trained_model_v0", 
+                              artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
@@ -71,32 +73,6 @@ def compute_verification_rewards(completions_text, correct_answers):
     """
     raise NotImplementedError("TODO: implement compute_verification_rewards")
 
-
-def compute_token_logprobs_student(model, tokens, prescribed_exit_layers=None):
-    """
-    TODO: Re-score student-sampled sequences with gradient-attached log-probs per token.
-    - Optionally prescribe the exit layers taken during generation (student SFT mode).
-    Returns: FloatTensor [batch*K, seq_len] of log p_student(y_t | y_<t, x).
-    """
-    raise NotImplementedError("TODO: implement compute_token_logprobs_student")
-
-
-def compute_token_logprobs_reference(model, tokens):
-    """
-    TODO: Score the same sequences under the reference policy (no early exit).
-    Returns: FloatTensor [batch*K, seq_len] of log p_ref(y_t | y_<t, x).
-    """
-    raise NotImplementedError("TODO: implement compute_token_logprobs_reference")
-
-
-def compute_token_kl_from_logprobs(student_logprobs, reference_logprobs):
-    """
-    TODO: Compute average per-token KL between student and reference over the sequence.
-    Returns: FloatTensor [batch*K] (e.g., mean over seq_len of KL_t).
-    """
-    raise NotImplementedError("TODO: implement compute_token_kl_from_logprobs")
-
-
 def compute_avg_exit_layer(exit_info):
     """
     TODO: Extract/compute average exit layer per sequence from exit_info.
@@ -115,21 +91,42 @@ def center_rewards_per_prompt(rewards, batch_size: int, k: int):
     return adv.reshape(-1)
 
 
-def compute_sequence_loglik_student(model, tokens, prescribed_exit_layers=None):
+def compute_sequence_loglik_student(student_log_likelihoods):
     """
     TODO: Sum token log-probs over generated tokens per sequence for weighted SFT.
     Returns: FloatTensor [batch*K].
     """
-    raise NotImplementedError("TODO: implement compute_sequence_loglik_student")
+    return student_log_likelihoods.sum(-1)
+
+def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
+    
+    """Implements one weighted RLOO step, using unlabelled 
+    equation after equation 8 in https://arxiv.org/pdf/2402.14740v2.pdf. 
+    It is impoertant to detch adv
+
+    Args:
+        advantages (FloatTensor): Shape (batch_size, k) containing the advantage values.
+        log_likelihoods (FloatTensor): Shape (batch_size, k) containing the sum of log_likelihood of next tokens
+    """
+    assert advantages.shape == log_likelihoods.shape, "adv and log_likelihood_gradients must have the same shape"
+    num_exit_samples = RL_HPARAMS.k
+    batch_size = RL_HPARAMS.batch_size
+    advantages = advantages.view(batch_size, num_exit_samples)
+    log_likelihoods = log_likelihoods.view(batch_size, num_exit_samples)
+    return (advantages.detach() * log_likelihoods).mean(-1)
 
 
-def weighted_sft_step(model, tokens, advantages, optimizer, prescribed_exit_layers=None):
+def weighted_sft_step(student_log_likelihoods, advantages, optimizer, num_exit_samples):
     """
     TODO: One weighted SFT step using sequence log-likelihoods.
     loss = -mean(adv.detach() * seq_loglik_student)
     Returns: scalar loss (FloatTensor).
     """
-    raise NotImplementedError("TODO: implement weighted_sft_step")
+    optimizer.zero_grad()
+    sequence_log_likelihoods = compute_sequence_loglik_student(student_log_likelihoods)  # [batch*K]
+    loss = weighted_rloo_loss(advantages, sequence_log_likelihoods, num_exit_samples) # should this be average instead of sum?
+    loss.backward()
+    optimizer.step()
 
 
 def main_rl_training():
@@ -137,7 +134,8 @@ def main_rl_training():
     Schema: Generate → Reward → Center → Weighted SFT
     """
     # TODO: optimizer (e.g., Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5))
-
+    # Check if there are better optimizers for this problem
+    optimizer = Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5)
     # TODO: wandb.init(project=..., config=...)
 
     # TODO: batching. For simplicity, treat batch_size = 1 here.
@@ -171,8 +169,8 @@ def main_rl_training():
         advantages = advantages / adv_std
 
         # 6) Weighted SFT update
-        loss = weighted_sft_step(student, completions['tokens'], advantages, optimizer, prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None))  # TODO
-
+        
+        weighted_sft_step(stu_logprobs, advantages, optimizer, RL_HPARAMS)  # TODO
         # 7) Logging (schema)
         # TODO: wandb.log({ 'step': i, 'loss': ..., 'reward/mean': ..., 'verify/acc': ..., 'kl/tokens_mean': ..., 'exit/avg_layer': ... })
 
