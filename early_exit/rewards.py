@@ -44,9 +44,11 @@ def compute_verification_rewards(completions_text, correct_answers):
         if extracted_answer is not None and extracted_answer == ground_truth:
             rewards[i] = 1.0
         elif extracted_answer_flexible is not None and extracted_answer_flexible == ground_truth:
-            rewards[i] = -1.0  #penalize misformatted outputs
+            rewards[i] = 0.5  #penalize misformatted outputs
+        elif extracted_answer is None:
+            rewards[i] = -1.0  #extra penalty for wrong format and no answer
         else:
-            rewards[i] = 0.0
+            rewards[i] = 0.0 #wrong answer but correct format
     
     return rewards
 
@@ -130,3 +132,24 @@ def compute_token_kl_from_logprobs(student_generated_ntp_logprobs, reference_gen
     kl_estimate = logprobs_diff.sum(-1)
     return kl_estimate
 
+    
+def compute_avg_exit_layer(prescribed_exit_layers, model):
+    """
+    Extract/compute average exit layer per sequence from prescribed_exit_layers.
+
+    Returns:
+        FloatTensor [batch*K]: Average exit layer per sequence.
+    """
+    
+    total_layers = model.config.num_hidden_layers if hasattr(model, 'config') else 28 #get total layers from config
+    final_layer_idx = float(total_layers - 1)  #0-indexed
+    
+    finite_layers = torch.where( #replace inf with final layer idx
+        torch.isinf(prescribed_exit_layers), 
+        torch.full_like(prescribed_exit_layers, final_layer_idx),
+        prescribed_exit_layers.float()
+    )
+    
+    avg_exit_layers = finite_layers.mean(dim=-1)
+    
+    return avg_exit_layers

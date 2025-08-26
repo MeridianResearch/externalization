@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from early_exit.util import get_model, load_model, load_model_from_wandb
-from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student
+from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from shared_utils.generate import generate_text
@@ -77,22 +77,6 @@ def generate_k_completions(model, prompt, k: int):
     """
     # TODO: set_transformer_early_exit_mode(model, 'free_generate') and call generate_text(...)
     raise NotImplementedError("TODO: implement generate_k_completions")
-
-
-def compute_verification_rewards(completions_text, correct_answers):
-    """
-    TODO: Return FloatTensor [batch*K] with +1 for correct formatted answers, 0 otherwise.
-    TODO: enforce format like '#### <answer>'; penalize misformatted outputs.
-    """
-    raise NotImplementedError("TODO: implement compute_verification_rewards")
-
-def compute_avg_exit_layer(exit_info):
-    """
-    TODO: Extract/compute average exit layer per sequence from exit_info.
-    Returns: FloatTensor [batch*K]. Consider normalizing by max exitable layer.
-    """
-    raise NotImplementedError("TODO: implement compute_avg_exit_layer")
-
 
 def center_rewards_per_prompt(rewards, batch_size: int, k: int):
     """
