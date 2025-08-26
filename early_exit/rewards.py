@@ -121,12 +121,12 @@ def compute_token_kl_from_logprobs(student_generated_ntp_logprobs, reference_gen
             log p_ref(y_t | y_<t, x).
 
     Returns:
-        kl_estimate (FloatTensor): Scalar tensor containing the mean difference
+        kl_estimate (FloatTensor):  Tensor [batch*K]
             (log p_student - log p_ref) across tokens.
-            Note: this is not the full KL divergence over the vacabulary.
+            Note: this is not the full KL divergence over the vocabulary.
     """
 
     logprobs_diff = student_generated_ntp_logprobs - reference_generated__ntp_logprobs
-    kl_estimate = logprobs_diff.mean()
+    kl_estimate = logprobs_diff.sum(-1)
     return kl_estimate
 
