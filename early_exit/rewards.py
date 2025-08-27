@@ -85,11 +85,25 @@ def compute_next_token_logprobs_from_logits(logits, tokens):
         next_token_logprobs (FloatTensor): Tensor of shape [batch*K, gen_len] containing
             log p(y_t | y_<t, x) for all the tokens including the prompt rollout.
     """
-    output_logprobs = logits.log_softmax(-1)
-    next_token_logprobs = output_logprobs[:,:-1, tokens[:, 1:]] # Check this, the logic is correct syntax is wrong!
+    # Here B = batch*K, T = full_seq_len, V = vocab_size
+    assert logits.dim() == 3 and tokens.dim() == 2, "Shapes must be [B,T,V] and [B,T]"
+    B, T, V = logits.shape
+    assert tokens.shape == (B, T), "tokens must be [B, T]"
+
+    # log-softmax over vocab
+    output_logprobs = logits.log_softmax(-1)  # [B, T, V]
+
+    # for each time step t (0..T-2), pick log p of token at t+1 from step t
+    # align shapes: index must be [B, T-1, 1]
+    idx = tokens[:, 1:].unsqueeze(-1)                # [B, T-1, 1]
+
+    next_token_logprobs = torch.gather(
+        output_logprobs[:, :-1, :], dim=-1, index=idx
+    ).squeeze(-1)                                    # [B, T-1]
+
     return next_token_logprobs
 
-def compute_token_logprobs_student(model, tokens, prescribed_exit_layers):
+def compute_token_logprobs_student(model, tokens, prescribed_exit_layers, input_prompt_length):
     """
     Compute per-token log-probabilities under the student model for a sampled sequence.
 
@@ -107,11 +121,11 @@ def compute_token_logprobs_student(model, tokens, prescribed_exit_layers):
     # Current implementation assumes student mode.
     student_output_scores, collected_exit_logits = model(tokens, prescribed_exit_layer_idxs = prescribed_exit_layers) # [batch * samples, full length, vocabulary]
     student_next_token_logprobs = compute_next_token_logprobs_from_logits(student_output_scores.logits, tokens)
-    gen_len = tokens.shape[-1] - prescribed_exit_layers.shape[-1] # Check this, is there a -1 needed?
-    student_generated_token_logprobs = student_next_token_logprobs[:, -gen_len:]
+    # gen_len = tokens.shape[-1] - prescribed_exit_layers.shape[-1] # Check this, is there a -1 needed?
+    student_generated_token_logprobs = student_next_token_logprobs[:, input_prompt_length:]
     return student_generated_token_logprobs
 
-def compute_token_logprobs_reference(model, tokens, gen_len):
+def compute_token_logprobs_reference(model, tokens, input_prompt_length):
     """
     Compute per-token log-probabilities under the reference model for a sampled sequence.
     Unlike the student, the reference model does not use early exiting.
@@ -128,7 +142,7 @@ def compute_token_logprobs_reference(model, tokens, gen_len):
     # raise NotImplementedError("TODO: implement compute_token_logprobs_reference")
     outputs = model(tokens) # [batch * samples, full length, vocabulary]
     next_token_logprobs = compute_next_token_logprobs_from_logits(outputs['logits'], tokens)
-    reference_generated_ntp_logprobs = next_token_logprobs[:, -gen_len:]
+    reference_generated_ntp_logprobs = next_token_logprobs[:, input_prompt_length:]
     return reference_generated_ntp_logprobs
 
 
@@ -177,6 +191,6 @@ def compute_avg_exit_layer(prescribed_exit_layers, model):
 
     avg_exit_layers = torch.stack(avg_exit_layers)
 
-    #avg_exit_layers = avg_exit_layers / final_layer_idx #if normalizing
+    avg_exit_layers = avg_exit_layers / final_layer_idx #if normalizing
     
     return avg_exit_layers

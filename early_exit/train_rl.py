@@ -16,6 +16,7 @@ from early_exit.rewards import compute_verification_rewards, compute_token_kl_fr
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from shared_utils.generate import generate_text
+from torch.nn.utils.rnn import pad_sequence
 
 device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
@@ -33,7 +34,7 @@ class RLHyperparams:
     - lambda_exit: weight for average exit layer penalty
     """
     batch_size: int = 1
-    k: int = 4
+    k: int = 2 # TODO: Kept it as 2 for debugging purposes, change back to 4 or more later
     beta_kl: float = 0.1
     lambda_exit: float = 0.5
 
@@ -56,7 +57,6 @@ reference = get_model(model_name, config['model'], device)
 
 # Dataset
 dataset = load_dataset("gsm8k", "main")  # TODO: verify/parse answer format
-
 
 # --- Core schema functions ---
 def generate_k_completions(model, prompt, k: int):
@@ -143,7 +143,7 @@ def center_rewards_per_prompt(rewards, batch_size: int, k: int):
 
 def compute_sequence_loglik_student(student_log_likelihoods):
     """
-    TODO: Sum token log-probs over generated tokens per sequence for weighted SFT.
+    TODO: Add the exit log probs!
     Returns: FloatTensor [batch*K].
     """
     return student_log_likelihoods.sum(-1)
@@ -160,6 +160,7 @@ class RolloutBatch:
     - stu_logprobs: FloatTensor [batch*K, seq_len]
     - prescribed_exit_layers (optional): LongTensor [batch*K, seq_len]
     - avg_exit_layer (optional): FloatTensor [batch*K]
+    - input_prompt_length (optional): int, number of tokens in the input prompt to exclude from logprobs
     """
     tokens: torch.Tensor
     texts: List[str]
@@ -167,6 +168,8 @@ class RolloutBatch:
     stu_logprobs: torch.Tensor
     prescribed_exit_layers: Optional[torch.Tensor] = None
     avg_exit_layer: Optional[torch.Tensor] = None
+    input_prompt_length: Optional[int] = None
+    generation_length = property(lambda self: self.tokens.shape[1] - self.input_prompt_length if self.input_prompt_length is not None else self.tokens.shape[1])
 
     def __post_init__(self) -> None:
         # tokens
@@ -184,14 +187,18 @@ class RolloutBatch:
         for name, lp in (('ref_logprobs', self.ref_logprobs), ('stu_logprobs', self.stu_logprobs)):
             assert isinstance(lp, torch.Tensor), f"{name} must be a torch.Tensor"
             assert torch.is_floating_point(lp), f"{name} must be a floating tensor"
-            assert lp.dim() == 2 and tuple(lp.shape) == (batchK, seq_len), f"{name} must be [batch*K, seq_len]"
+            # TODO: Check the -1 for the shape. Why generation_length - 1?
+            assert lp.dim() == 2 and tuple(lp.shape) == (batchK, self.generation_length - 1), \
+            f"{name} has shape {lp.shape}, instead it must be [batch*K = {batchK}, generation_length - 1 = {self.generation_length - 1}]"
 
         # prescribed exit layers (optional)
         if self.prescribed_exit_layers is not None:
             pel = self.prescribed_exit_layers
             assert isinstance(pel, torch.Tensor), "prescribed_exit_layers must be a torch.Tensor"
-            assert pel.dtype == torch.long, "prescribed_exit_layers must be dtype torch.long"
-            assert pel.dim() == 2 and tuple(pel.shape) == (batchK, seq_len), "prescribed_exit_layers must be [batch*K, seq_len]"
+            # TODO: Check if we need long dtype for this
+            # assert pel.dtype == torch.long, f"prescribed_exit_layers must be dtype torch.long instead of {pel.dtype}"
+            assert pel.dim() == 2 and tuple(pel.shape) == (batchK, self.generation_length),\
+            f"prescribed_exit_layers has shape = {pel.shape} must be [batch*K = {batchK}, generation_length = {self.generation_length}]"
 
         # avg exit layer (optional)
         if self.avg_exit_layer is not None:
@@ -202,10 +209,10 @@ class RolloutBatch:
 
 def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
     
-    """Implements one weighted RLOO step, using unlabelled 
+    """Computes loss on one weighted RLOO step, based on unlabelled 
     equation after equation 8 in https://arxiv.org/pdf/2402.14740v2.pdf. 
-    It is impoertant to detch adv
-
+    It is important to detch advantages so that no gradients flow through them.
+    loss = -mean(adv.detach() * seq_loglik_student)
     Args:
         advantages (FloatTensor): Shape (batch_size, k) containing the advantage values.
         log_likelihoods (FloatTensor): Shape (batch_size, k) containing the sum of log_likelihood of next tokens
@@ -215,22 +222,26 @@ def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
     batch_size = RL_HPARAMS.batch_size
     advantages = advantages.view(batch_size, num_exit_samples)
     log_likelihoods = log_likelihoods.view(batch_size, num_exit_samples)
-    return (advantages.detach() * log_likelihoods).mean(-1)
+    return -(advantages.detach() * log_likelihoods).mean(-1)
 
 
 def weighted_sft_step(student_log_likelihoods, advantages, optimizer, num_exit_samples):
     """
-    TODO: One weighted SFT step using sequence log-likelihoods.
-    loss = -mean(adv.detach() * seq_loglik_student)
     Returns: scalar loss (FloatTensor).
     """
     optimizer.zero_grad()
     sequence_log_likelihoods = compute_sequence_loglik_student(student_log_likelihoods)  # [batch*K]
-    loss = -weighted_rloo_loss(advantages, sequence_log_likelihoods, num_exit_samples) # should this be average instead of sum?
+    loss = weighted_rloo_loss(advantages, sequence_log_likelihoods, num_exit_samples) # should this be average instead of sum?
     loss.backward()
     optimizer.step()
     return loss.detach()
 
+def get_input_prompt_length(tokenizer, prompt):
+    from shared_utils.generate import format_conversation, transform_conversations
+    pre_transformed_conversation = format_conversation(user_prompts = [prompt], system_prompt='')
+    formatted_prompt = transform_conversations(pre_transformed_conversation, prefiller = '')[0]
+    input_prompt_length = len(tokenizer(formatted_prompt)['input_ids'])
+    return input_prompt_length
 
 def main_rl_training():
     """
@@ -285,20 +296,32 @@ def main_rl_training():
 
         # 1) Rollouts (student free-generate K)
         completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k)  # TODO
+        input_prompt_length = get_input_prompt_length(tokenizer, prompt)  # TODO: very hacky, do it in a cleaner way
+        print(f"Input prompt length (in tokens): {input_prompt_length}")
         set_transformer_early_exit_mode(student, 'sft_student')
 
         # 2) Log-probs for KL and rewards (reference vs student)  # TODO: confirm scoring design
         
-        ref_logprobs = compute_token_logprobs_reference(reference, completions['tokens'])  # TODO
-        stu_logprobs = compute_token_logprobs_student(student, completions['tokens'], prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None))  # TODO
-
+        ref_logprobs = compute_token_logprobs_reference(reference, 
+                                                        completions['tokens'],
+                                                        input_prompt_length)  # TODO
+        
+        prescribed_exit_layers = pad_sequence(exit_info['prescribed_exit_layers'], batch_first=True, padding_value=torch.inf)
+        stu_logprobs = compute_token_logprobs_student(student, 
+                                                      completions['tokens'], 
+                                                      prescribed_exit_layers=prescribed_exit_layers,
+                                                      input_prompt_length=input_prompt_length)  # TODO
+        
+        # import ipdb; ipdb.set_trace()
         # Runtime validation of rollout tensors (dtype/shape checks)
         _ = RolloutBatch(
             tokens=completions['tokens'],
             texts=completions['texts'],
             ref_logprobs=ref_logprobs,
             stu_logprobs=stu_logprobs,
-            prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None),
+            # prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None),
+            prescribed_exit_layers=prescribed_exit_layers,
+            input_prompt_length=input_prompt_length
             #avg_exit_layer=exit_info.get('avg_exit_layer', None), #calced in rewards later
         )
 
@@ -306,9 +329,9 @@ def main_rl_training():
         verify = compute_verification_rewards(completions['texts'], [correct_answer] * RL_HPARAMS.k)
         kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs)  # TODO
         avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
-
+        # import ipdb; ipdb.set_trace()
         # 4) Total reward per sequence (simple linear combination)
-        reward = verify - RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer  # TODO: tune weights, consider normalization
+        reward = verify.to(device) - RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)  # TODO: tune weights, consider normalization
 
         # 5) Centering per prompt
         advantages = center_rewards_per_prompt(reward, batch_size=1, k=RL_HPARAMS.k)
@@ -336,7 +359,7 @@ def main_rl_training():
                 'rewards/verify_mean': verify.mean().item(),
                 'objective/kl': kl_tokens.mean().item(),
                 'exit/avg_layer': avg_exit_layer.mean().item(),
-                'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
+                'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
                 # Reward components
                 'rewards/verify_reward_component_mean': verify.mean().item(),
                 'rewards/kl_penalty_component_mean': (RL_HPARAMS.beta_kl * kl_tokens).mean().item(),
@@ -359,3 +382,5 @@ def main_rl_training():
 
     wandb.finish()
 
+
+main_rl_training()

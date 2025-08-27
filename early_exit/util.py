@@ -213,12 +213,13 @@ def load_model(model, model_path):
     return model
 
 def load_model_from_wandb(model, model_path, artifact_path):
-
-    api = wandb.Api()
-    
-    # Get the artifact
-    artifact = api.artifact(artifact_path)
-    artifact.download(root=model_path)
+    if os.path.exists(model_path):
+        print(f"Model path {model_path} already exists, skipping download")
+    else:
+        api = wandb.Api()
+        artifact = api.artifact(artifact_path)
+        artifact.download(root=model_path)
+        
     model = load_model(model, model_path)
     
     return model
