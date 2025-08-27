@@ -68,15 +68,67 @@ def generate_k_completions(model, prompt, k: int):
         - tokens: LongTensor of shape [batch*K, seq_len]; dtype=torch.long
         - texts: list[str] of length batch*K
     - exit_info:
-        - avg_exit_layer: FloatTensor of shape [batch*K]; typically in [0, total_exitable_layers] or normalized to [0,1]
+        - avg_exit_layer: FloatTensor of shape [batch*K]; typically in [0, total_exitable_layers] or normalized to [0,1] #removing this
         - prescribed_exit_layers: Optional[LongTensor] of shape [batch*K, seq_len] for re-scoring
 
     Typical ranges:
-    - seq_len: 16–512 depending on generation config
-    - avg_exit_layer (normalized): 0.0 (early) → 1.0 (late)
+    - seq_len: 16–512 depending on generation configuration
     """
     # TODO: set_transformer_early_exit_mode(model, 'free_generate') and call generate_text(...)
-    raise NotImplementedError("TODO: implement generate_k_completions")
+    #raise NotImplementedError("TODO: implement generate_k_completions")
+
+    set_transformer_early_exit_mode(model, 'free_generate') #are we sure about this and not free generate?
+
+    all_tokens = []
+    all_texts = []
+    all_prescribed_exit_layers = []
+    
+    for p in prompt:
+        for _ in range(k):
+            decoded_response, model_outputs = generate_text(
+                model=model,
+                prompt=p,
+                system_prompt='',
+                prefiller='',
+                tokenizer=tokenizer,
+                generation_config=config['generation'],
+                device=device
+            )
+
+            sequences, exit_layer_idxs = model_outputs
+            tokens = sequences[0]
+            prescribed_exit_layers = exit_layer_idxs[0]
+            
+            all_tokens.append(tokens)
+            all_texts.append(decoded_response)
+            all_prescribed_exit_layers.append(prescribed_exit_layers)
+    
+    max_seq_len = max(len(tokens) for tokens in all_tokens)
+    padded_tokens = []
+    final_prescribed_layers = [] #no padding since will mess up avg exit layer
+
+    for i, (tokens, exit_layers) in enumerate(zip(all_tokens, all_prescribed_exit_layers)):
+        pad_length = max_seq_len - len(tokens)
+        if pad_length > 0:
+            padded_token = torch.cat([tokens, torch.full((pad_length,), tokenizer.pad_token_id, dtype=tokens.dtype, device=tokens.device)])
+        else:
+            padded_token = tokens
+
+        padded_tokens.append(padded_token)
+        final_prescribed_layers.append(exit_layers)
+
+    completions_tokens = torch.stack(padded_tokens, dim=0)
+
+    completions = {
+        'tokens': completions_tokens,
+        'texts': all_texts
+    }
+
+    exit_info = {
+        'prescribed_exit_layers': final_prescribed_layers
+    }
+    
+    return completions, exit_info
 
 def center_rewards_per_prompt(rewards, batch_size: int, k: int):
     """
@@ -173,7 +225,7 @@ def weighted_sft_step(student_log_likelihoods, advantages, optimizer, num_exit_s
     """
     optimizer.zero_grad()
     sequence_log_likelihoods = compute_sequence_loglik_student(student_log_likelihoods)  # [batch*K]
-    loss = weighted_rloo_loss(advantages, sequence_log_likelihoods, num_exit_samples) # should this be average instead of sum?
+    loss = -weighted_rloo_loss(advantages, sequence_log_likelihoods, num_exit_samples) # should this be average instead of sum?
     loss.backward()
     optimizer.step()
 
@@ -197,6 +249,7 @@ def main_rl_training():
 
         # 1) Rollouts (student free-generate K)
         completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k)  # TODO
+        set_transformer_early_exit_mode(student, 'free_generate')
 
         # 2) Log-probs for KL and rewards (reference vs student)  # TODO: confirm scoring design
 
@@ -210,13 +263,13 @@ def main_rl_training():
             ref_logprobs=ref_logprobs,
             stu_logprobs=stu_logprobs,
             prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None),
-            avg_exit_layer=exit_info.get('avg_exit_layer', None),
+            #avg_exit_layer=exit_info.get('avg_exit_layer', None), #calced in rewards later
         )
 
         # 3) Reward components
-        verify = compute_verification_rewards(completions['texts'], [correct_answer] * RL_HPARAMS.k)  # TODO
+        verify = compute_verification_rewards(completions['texts'], [correct_answer] * RL_HPARAMS.k)
         kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs)  # TODO
-        avg_exit_layer = compute_avg_exit_layer(exit_info)  # TODO
+        avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
 
         # 4) Total reward per sequence (simple linear combination)
         reward = verify - RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer  # TODO: tune weights, consider normalization

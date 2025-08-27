@@ -25,6 +25,25 @@ def extract_solution(solution_str, method="strict"):
                     break
     return final_answer
 
+def check_format_violations(completion_text):
+    penalty = 0.0
+    
+    hash_count = completion_text.count("####") #check for multiple #### 
+    if hash_count > 1:
+        penalty += 0.1
+    
+    final_hash_match = re.search(r"#### (\\-?[0-9\\.\\,]+)(.+)", completion_text, re.DOTALL) #check for text after final #### answer
+    if final_hash_match:
+        text_after = final_hash_match.group(2).strip()
+        if text_after:
+            penalty += 0.1
+    
+    malformed_hash = re.findall(r"#### (?![0-9\\-])", completion_text) #check for #### with no number after
+    if malformed_hash:
+        penalty += 0.1
+    
+    return penalty
+
 def compute_verification_rewards(completions_text, correct_answers):
 
     rewards = torch.zeros(len(completions_text), dtype=torch.float32)
@@ -40,9 +59,11 @@ def compute_verification_rewards(completions_text, correct_answers):
         
         extracted_answer = extract_solution(completion_text, method="strict")
         extracted_answer_flexible = extract_solution(completion_text, method="flexible")
+
+        format_penalty = check_format_violations(completion_text)
         
         if extracted_answer is not None and extracted_answer == ground_truth:
-            rewards[i] = 1.0
+            rewards[i] = 1.0 - format_penalty #full reward minus any format penalties
         elif extracted_answer_flexible is not None and extracted_answer_flexible == ground_truth:
             rewards[i] = 0.5  #penalize misformatted outputs
         elif extracted_answer is None:
@@ -143,13 +164,19 @@ def compute_avg_exit_layer(prescribed_exit_layers, model):
     
     total_layers = model.config.num_hidden_layers if hasattr(model, 'config') else 28 #get total layers from config
     final_layer_idx = float(total_layers - 1)  #0-indexed
-    
-    finite_layers = torch.where( #replace inf with final layer idx
-        torch.isinf(prescribed_exit_layers), 
-        torch.full_like(prescribed_exit_layers, final_layer_idx),
-        prescribed_exit_layers.float()
-    )
-    
-    avg_exit_layers = finite_layers.mean(dim=-1)
+
+    avg_exit_layers = []
+    for exit_layers in prescribed_exit_layers:
+        finite_layers = torch.where( #replace inf with final layer idx
+            torch.isinf(exit_layers), 
+            torch.full_like(exit_layers, final_layer_idx),
+            exit_layers.float()
+        )
+        #avg over the actual generation length (no padding as messes up mean)
+        avg_exit_layers.append(finite_layers.mean())
+
+    avg_exit_layers = torch.stack(avg_exit_layers)
+
+    #avg_exit_layers = avg_exit_layers / final_layer_idx #if normalizing
     
     return avg_exit_layers
