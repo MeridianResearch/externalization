@@ -311,6 +311,10 @@ def main_rl_training():
                 'objective/kl': kl_tokens.mean().item(),
                 'exit/avg_layer': avg_exit_layer.mean().item(),
                 'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
+                # Reward components
+                'rewards/verify_reward_component_mean': verify.mean().item(),
+                'rewards/kl_penalty_component_mean': (RL_HPARAMS.beta_kl * kl_tokens).mean().item(),
+                'rewards/exit_layer_penalty_component_mean': (RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
 
                 # Loss / training progress
                 'loss/policy_avg': float(loss.item() if hasattr(loss, 'item') else loss),
