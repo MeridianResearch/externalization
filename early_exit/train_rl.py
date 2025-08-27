@@ -85,15 +85,16 @@ def generate_k_completions(model, prompt, k: int):
     
     for p in prompt:
         for _ in range(k):
-            decoded_response, model_outputs = generate_text(
-                model=model,
-                prompt=p,
-                system_prompt='',
-                prefiller='',
-                tokenizer=tokenizer,
-                generation_config=config['generation'],
-                device=device
-            )
+            with torch.no_grad():
+                decoded_response, model_outputs = generate_text(
+                    model=model,
+                    prompt=p,
+                    system_prompt='',
+                    prefiller='',
+                    tokenizer=tokenizer,
+                    generation_config=config['generation'],
+                    device=device
+                )
 
             sequences, exit_layer_idxs = model_outputs
             tokens = sequences[0]
@@ -249,7 +250,7 @@ def main_rl_training():
 
         # 1) Rollouts (student free-generate K)
         completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k)  # TODO
-        set_transformer_early_exit_mode(student, 'free_generate')
+        set_transformer_early_exit_mode(student, 'sft_student')
 
         # 2) Log-probs for KL and rewards (reference vs student)  # TODO: confirm scoring design
 
