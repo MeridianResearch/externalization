@@ -164,7 +164,7 @@ def compute_token_kl_from_logprobs(student_generated_ntp_logprobs, reference_gen
     """
 
     logprobs_diff = student_generated_ntp_logprobs - reference_generated__ntp_logprobs
-    kl_estimate = logprobs_diff.sum(-1)
+    kl_estimate = logprobs_diff.mean(-1)
     return kl_estimate
 
     
