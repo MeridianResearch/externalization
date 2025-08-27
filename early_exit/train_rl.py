@@ -246,8 +246,34 @@ def main_rl_training():
             **config,
             rl_hparams=vars(RL_HPARAMS),
             model_exitable_layers=getattr(student, 'exitable_layer_idxs', []).tolist() if hasattr(student, 'exitable_layer_idxs') else None,
+            metric_descriptions={
+                # Objective & rewards
+                'objective/rlhf_reward': 'Mean total reward per step',
+                'objective/kl': 'Mean token KL vs reference policy',
+                'objective/non_score_reward': 'Mean of penalty terms (KL + exit)',
+                'rewards/verify_mean': 'Mean task verification reward',
+                'rewards/kl_penalty_component_mean': 'Mean KL penalty contribution',
+                'rewards/exit_layer_penalty_component_mean': 'Mean exit-layer penalty contribution',
+                # Exit
+                'exit/avg_layer': 'Mean prescribed exit layer index',
+                # Loss & training progress
+                'loss/policy_avg': 'Policy loss (RLOO-weighted SFT)',
+                'training/lr': 'Optimizer learning rate',
+                'training/episode': 'Training step index',
+                # Completions
+                'completions/mean_length': 'Mean completion length (tokens)',
+                'completions/min_length': 'Min completion length (tokens)',
+                'completions/max_length': 'Max completion length (tokens)',
+                'completions/clipped_ratio': 'Frac. completions without EOS',
+                'completions/num_eos_tokens': 'Total EOS tokens in batch',
+            }
         )
     )
+
+    # Define metric step and categories for clean grouping in W&B UI
+    wandb.define_metric('training/episode')
+    for pattern in ['objective/*', 'rewards/*', 'exit/*', 'loss/*', 'completions/*', 'training/*']:
+        wandb.define_metric(pattern, step_metric='training/episode')
 
     # TODO: batching. For simplicity, treat batch_size = 1 here.
     train_dataset = dataset["train"]
@@ -318,15 +344,15 @@ def main_rl_training():
 
                 # Loss / training progress
                 'loss/policy_avg': float(loss.item() if hasattr(loss, 'item') else loss),
-                'lr': optimizer.param_groups[0]['lr'],
-                'episode': i,
+                'training/lr': optimizer.param_groups[0]['lr'],
+                'training/episode': i,
 
                 # Completions
                 'completions/mean_length': seq_lens.mean().item(),
                 'completions/min_length': seq_lens.min().item(),
                 'completions/max_length': seq_lens.max().item(),
                 'completions/clipped_ratio': clipped_ratio,
-                'val/num_eos_tokens': num_eos_tokens,
+                'completions/num_eos_tokens': num_eos_tokens,
             }
 
             wandb.log(log_dict)
