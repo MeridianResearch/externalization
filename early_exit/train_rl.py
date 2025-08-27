@@ -229,6 +229,7 @@ def weighted_sft_step(student_log_likelihoods, advantages, optimizer, num_exit_s
     loss = -weighted_rloo_loss(advantages, sequence_log_likelihoods, num_exit_samples) # should this be average instead of sum?
     loss.backward()
     optimizer.step()
+    return loss.detach()
 
 
 def main_rl_training():
@@ -238,7 +239,15 @@ def main_rl_training():
     # TODO: optimizer (e.g., Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5))
     # Check if there are better optimizers for this problem
     optimizer = Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5)
-    # TODO: wandb.init(project=..., config=...)
+    # Minimal wandb init (extend later)
+    run = wandb.init(
+        project="early-exit",
+        config=dict(
+            **config,
+            rl_hparams=vars(RL_HPARAMS),
+            model_exitable_layers=getattr(student, 'exitable_layer_idxs', []).tolist() if hasattr(student, 'exitable_layer_idxs') else None,
+        )
+    )
 
     # TODO: batching. For simplicity, treat batch_size = 1 here.
     train_dataset = dataset["train"]
@@ -253,9 +262,14 @@ def main_rl_training():
         set_transformer_early_exit_mode(student, 'sft_student')
 
         # 2) Log-probs for KL and rewards (reference vs student)  # TODO: confirm scoring design
+        gen_lens = [pel.shape[-1] for pel in exit_info.get('prescribed_exit_layers', [])]
+        assert len(gen_lens) > 0, "prescribed_exit_layers must be provided for KL/reward computation"
+        gen_len = int(min(gen_lens))
 
-        ref_logprobs = compute_token_logprobs_reference(reference, completions['tokens'])  # TODO
-        stu_logprobs = compute_token_logprobs_student(student, completions['tokens'], prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None))  # TODO
+        ref_logprobs = compute_token_logprobs_reference(reference, completions['tokens'], gen_len)
+        stu_logprobs = compute_token_logprobs_student(student, completions['tokens'], prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None))
+        if stu_logprobs.shape[-1] != gen_len:
+            stu_logprobs = stu_logprobs[:, -gen_len:]
 
         # Runtime validation of rollout tensors (dtype/shape checks)
         _ = RolloutBatch(
@@ -283,7 +297,40 @@ def main_rl_training():
 
         # 6) Weighted SFT update
         
-        weighted_sft_step(stu_logprobs, advantages, optimizer, RL_HPARAMS)  # TODO
+        loss = weighted_sft_step(stu_logprobs, advantages, optimizer, RL_HPARAMS)  # TODO
         # 7) Logging (schema)
-        # TODO: wandb.log({ 'step': i, 'loss': ..., 'reward/mean': ..., 'verify/acc': ..., 'kl/tokens_mean': ..., 'exit/avg_layer': ... })
+        with torch.no_grad():
+            tokens_tensor = completions['tokens']  # [batch*K, seq_len]
+            pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else -1
+            eos_id = tokenizer.eos_token_id if tokenizer.eos_token_id is not None else -1
+
+            seq_lens = (tokens_tensor != pad_id).sum(dim=1).float()
+            contains_eos = (tokens_tensor == eos_id).any(dim=1) if eos_id != -1 else torch.zeros_like(seq_lens, dtype=torch.bool)
+            clipped_ratio = 1.0 - contains_eos.float().mean().item()
+            num_eos_tokens = int((tokens_tensor == eos_id).sum().item()) if eos_id != -1 else 0
+
+            log_dict = {
+                # Objective metrics
+                'objective/rlhf_reward': reward.mean().item(),
+                'rewards/verify_mean': verify.mean().item(),
+                'objective/kl': kl_tokens.mean().item(),
+                'exit/avg_layer': avg_exit_layer.mean().item(),
+                'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
+
+                # Loss / training progress
+                'loss/policy_avg': float(loss.item() if hasattr(loss, 'item') else loss),
+                'lr': optimizer.param_groups[0]['lr'],
+                'episode': i,
+
+                # Completions
+                'completions/mean_length': seq_lens.mean().item(),
+                'completions/min_length': seq_lens.min().item(),
+                'completions/max_length': seq_lens.max().item(),
+                'completions/clipped_ratio': clipped_ratio,
+                'val/num_eos_tokens': num_eos_tokens,
+            }
+
+            wandb.log(log_dict)
+
+    wandb.finish()
 
