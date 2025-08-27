@@ -241,7 +241,7 @@ def main_rl_training():
     optimizer = Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5)
     # Minimal wandb init (extend later)
     run = wandb.init(
-        project="early-exit",
+        project="early-exit-RL",
         config=dict(
             **config,
             rl_hparams=vars(RL_HPARAMS),
@@ -262,14 +262,9 @@ def main_rl_training():
         set_transformer_early_exit_mode(student, 'sft_student')
 
         # 2) Log-probs for KL and rewards (reference vs student)  # TODO: confirm scoring design
-        gen_lens = [pel.shape[-1] for pel in exit_info.get('prescribed_exit_layers', [])]
-        assert len(gen_lens) > 0, "prescribed_exit_layers must be provided for KL/reward computation"
-        gen_len = int(min(gen_lens))
-
-        ref_logprobs = compute_token_logprobs_reference(reference, completions['tokens'], gen_len)
-        stu_logprobs = compute_token_logprobs_student(student, completions['tokens'], prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None))
-        if stu_logprobs.shape[-1] != gen_len:
-            stu_logprobs = stu_logprobs[:, -gen_len:]
+        
+        ref_logprobs = compute_token_logprobs_reference(reference, completions['tokens'])  # TODO
+        stu_logprobs = compute_token_logprobs_student(student, completions['tokens'], prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None))  # TODO
 
         # Runtime validation of rollout tensors (dtype/shape checks)
         _ = RolloutBatch(
