@@ -10,7 +10,7 @@ import wandb
 from datasets import load_dataset
 from typing import Optional
 
-from early_exit.util import get_model, load_model_from_wandb
+from early_exit.util import get_model, load_model_from_wandb, load_model
 from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, weighted_sft_step, get_input_prompt_length
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer
@@ -21,7 +21,7 @@ from torch.nn.utils.rnn import pad_sequence
 device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
-sft_model_path = "models/early_exit_sft_trained"  # TODO: set path to SFT checkpoint
+sft_model_path = "models/trained_model_v0"  # TODO: set path to SFT checkpoint
 
 RL_HPARAMS = RLHyperparams()
 
@@ -33,8 +33,8 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
 # TODO: Change artifact path to sft trained gsm-8k model
-student = load_model_from_wandb(student, model_path = "models/trained_model_v0", 
-                              artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
+#student = load_model_from_wandb(student, model_path = "models/trained_model_v0", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
+student = load_model(student, sft_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
@@ -55,6 +55,7 @@ def main_rl_training():
 
     run = wandb.init(
         project="early-exit-RL",
+        entity="vkarthik095-university-of-amsterdam",
         config=dict(
             **config,
             rl_hparams=vars(RL_HPARAMS),
@@ -155,8 +156,8 @@ def main_rl_training():
         # 5) Centering per prompt
         advantages = center_rewards_per_prompt(reward, batch_size=1, k=RL_HPARAMS.k)
         # Normalize advantages by their standard deviation to stabilize learning
-        # adv_std = advantages.std(unbiased=False) + 1e-8
-        adv_std = 1.
+        adv_std = advantages.std(unbiased=False) + 1e-8
+        #adv_std = 1.
         advantages = advantages / adv_std
 
         # 6) Weighted SFT update
