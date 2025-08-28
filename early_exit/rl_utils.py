@@ -10,7 +10,7 @@ from early_exit.rl_types import *
 from shared_utils.generate import generate_text
 
 # ---------------- RL helper functions moved from train_rl.py ----------------
-def generate_k_completions(model, prompt, k: int, tokenizer, config, device):
+def generate_k_completions(model, prompt, k: int, tokenizer, config, device, system_prompt):
     """
     Free-generate K completions per prompt with early exits enabled.
 
@@ -36,7 +36,7 @@ def generate_k_completions(model, prompt, k: int, tokenizer, config, device):
                 decoded_response, model_outputs = generate_text(
                     model=model,
                     prompt=p,
-                    system_prompt='',
+                    system_prompt=system_prompt,
                     prefiller='',
                     tokenizer=tokenizer,
                     generation_config=config['generation'],
@@ -126,9 +126,9 @@ def weighted_sft_step(student_log_likelihoods, advantages, optimizer, RL_HPARAMS
     return loss.detach()
 
 
-def get_input_prompt_length(tokenizer, prompt):
+def get_input_prompt_length(tokenizer, prompt, system_prompt):
     from shared_utils.generate import format_conversation, transform_conversations
-    pre_transformed_conversation = format_conversation(user_prompts=[prompt], system_prompt='')
+    pre_transformed_conversation = format_conversation(user_prompts=[prompt], system_prompt=system_prompt)
     formatted_prompt = transform_conversations(pre_transformed_conversation, prefiller='')[0]
     input_prompt_length = len(tokenizer(formatted_prompt)['input_ids'])
     return input_prompt_length

@@ -11,7 +11,7 @@ from datasets import load_dataset
 from typing import Optional
 
 from early_exit.util import get_model, load_model_from_wandb
-from early_exit.util import generate_k_completions, center_rewards_per_prompt, weighted_sft_step, get_input_prompt_length
+from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, weighted_sft_step, get_input_prompt_length
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
@@ -112,8 +112,10 @@ def main_rl_training():
         correct_answer = example["answer"]
 
         # 1) Rollouts (student free-generate K)
-        completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k, tokenizer=tokenizer, config=config, device=device)  # TODO
-        input_prompt_length = get_input_prompt_length(tokenizer, prompt)  # TODO: very hacky, do it in a cleaner way
+        completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k, 
+                                                        tokenizer=tokenizer, config=config, device=device, 
+                                                        system_prompt = RL_HPARAMS.system_prompt)  # TODO
+        input_prompt_length = get_input_prompt_length(tokenizer, prompt, system_prompt = RL_HPARAMS.system_prompt)  # TODO: very hacky, do it in a cleaner way
         print(f"Input prompt length (in tokens): {input_prompt_length}")
         set_transformer_early_exit_mode(student, 'sft_student')
 

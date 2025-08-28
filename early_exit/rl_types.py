@@ -26,6 +26,11 @@ class RLHyperparams:
     sample_max_rows: int = 2
     sample_log_selection: str = "first"
     sample_log_seed: Optional[int] = None
+    system_prompt: Optional[str] = """You are a helpful assistant that solves math word problems step by step. Always end your solution with '#### ' followed by the final number.
+Here is an example:
+Question: Mary is 4 years old. Mike is 4 years older than Mary. How old is Anne if she is 1 year older than Mike?
+Solution: Mary is 4 years old. Since Mike is 4 years older than Mary's age of 4, Mike is age 4+4=8. If Anne is 1 year older than Mike's age of 8, then she is of age 8+1=9.
+#### 9"""
 
 
 @dataclass
