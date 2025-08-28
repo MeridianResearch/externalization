@@ -69,6 +69,9 @@ def main_rl_training():
                 'rewards/exit_layer_penalty_component_mean': 'Mean exit-layer penalty contribution',
                 # Exit
                 'exit/avg_layer': 'Mean prescribed exit layer index',
+                'exit/min_layer': 'Min prescribed exit layer index (normalized 0..1)',
+                'exit/max_layer': 'Max prescribed exit layer index (normalized 0..1)',
+                'exit/std_layer': 'Std of prescribed exit layer index (normalized 0..1)',
                 # Loss & training progress
                 'loss/policy_avg': 'Policy loss (RLOO-weighted SFT)',
                 'training/lr': 'Optimizer learning rate',
@@ -173,6 +176,9 @@ def main_rl_training():
                 'rewards/verify_mean': verify.mean().item(),
                 'objective/kl': kl_tokens.mean().item(),
                 'exit/avg_layer': avg_exit_layer.mean().item(),
+                'exit/min_layer': avg_exit_layer.min().item(),
+                'exit/max_layer': avg_exit_layer.max().item(),
+                'exit/std_layer': avg_exit_layer.std(unbiased=False).item(),
                 'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
                 # Reward components
                 'rewards/verify_reward_component_mean': verify.mean().item(),
