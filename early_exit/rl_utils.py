@@ -89,12 +89,12 @@ def center_rewards_per_prompt(rewards, batch_size: int, k: int):
     return adv.reshape(-1)
 
 
-def compute_sequence_loglik_student(student_log_likelihoods):
+def compute_sequence_mean_loglik_student(student_log_likelihoods):
     """
     TODO: Add the exit log probs!
     Returns: FloatTensor [batch*K].
     """
-    return student_log_likelihoods.sum(-1)
+    return student_log_likelihoods.mean(-1)
 
 
 def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
@@ -119,8 +119,8 @@ def weighted_sft_step(student_log_likelihoods, advantages, optimizer, RL_HPARAMS
     Returns: scalar loss (FloatTensor).
     """
     optimizer.zero_grad()
-    sequence_log_likelihoods = compute_sequence_loglik_student(student_log_likelihoods)  # [batch*K]
-    loss = weighted_rloo_loss(advantages, sequence_log_likelihoods, RL_HPARAMS)
+    sequence_mean_log_likelihoods = compute_sequence_mean_loglik_student(student_log_likelihoods)  # [batch*K]
+    loss = weighted_rloo_loss(advantages, sequence_mean_log_likelihoods, RL_HPARAMS)
     loss.backward()
     optimizer.step()
     return loss.detach()

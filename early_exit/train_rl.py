@@ -155,7 +155,8 @@ def main_rl_training():
         # 5) Centering per prompt
         advantages = center_rewards_per_prompt(reward, batch_size=1, k=RL_HPARAMS.k)
         # Normalize advantages by their standard deviation to stabilize learning
-        adv_std = advantages.std(unbiased=False) + 1e-8
+        # adv_std = advantages.std(unbiased=False) + 1e-8
+        adv_std = 1.
         advantages = advantages / adv_std
 
         # 6) Weighted SFT update
@@ -175,22 +176,24 @@ def main_rl_training():
             log_dict = {
                 # Objective metrics
                 'objective/rlhf_reward': reward.mean().item(),
-                'rewards/verify_mean': verify.mean().item(),
                 'objective/kl': kl_tokens.mean().item(),
+                'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
                 'exit/avg_layer': avg_exit_layer.mean().item(),
                 'exit/min_layer': avg_exit_layer.min().item(),
                 'exit/max_layer': avg_exit_layer.max().item(),
                 'exit/std_layer': avg_exit_layer.std(unbiased=False).item(),
-                'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
                 # Reward components
-                'rewards/verify_reward_component_mean': verify.mean().item(),
+                'rewards/verify_mean': verify.mean().item(),
                 'rewards/kl_penalty_component_mean': (RL_HPARAMS.beta_kl * kl_tokens).mean().item(),
                 'rewards/exit_layer_penalty_component_mean': (RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
 
-                # Loss / training progress
-                'loss/policy_avg': float(loss.item() if hasattr(loss, 'item') else loss),
+                # Training advantage
+                'training/advantage_mean': advantages.mean().item(),
+                'training/advantage_std': advantages.std(unbiased=False).item(),
                 'training/lr': optimizer.param_groups[0]['lr'],
                 'training/episode': i,
+                'training/loss': float(loss.item() if hasattr(loss, 'item') else loss),
+                'training/log_probs_mean': stu_logprobs.mean().item(),
 
                 # Completions
                 'completions/mean_length': seq_lens.mean().item(),
