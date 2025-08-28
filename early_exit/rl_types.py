@@ -13,11 +13,19 @@ class RLHyperparams:
     - k: number of rollouts per prompt
     - beta_kl: weight for KL penalty
     - lambda_exit: weight for average exit layer penalty
+    - sample_log_interval: episodes between logging sample generations
+    - sample_max_rows: maximum number of sample generations to log per event
+    - sample_log_selection: how to choose rows for samples table ('random'|'first')
+    - sample_log_seed: optional seed for reproducible sample selection
     """
     batch_size: int = 1
     k: int = 2  # TODO: Kept it as 2 for debugging purposes, change back to 4 or more later
     beta_kl: float = 0.1
     lambda_exit: float = 0.5
+    sample_log_interval: int = 25
+    sample_max_rows: int = 2
+    sample_log_selection: str = "first"
+    sample_log_seed: Optional[int] = None
 
 
 @dataclass

@@ -11,7 +11,7 @@ from datasets import load_dataset
 from typing import Optional
 
 from early_exit.util import get_model, load_model_from_wandb
-from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, weighted_sft_step, get_input_prompt_length
+from early_exit.util import generate_k_completions, center_rewards_per_prompt, weighted_sft_step, get_input_prompt_length
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
@@ -32,16 +32,16 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
-
+# TODO: Change artifact path to sft trained gsm-8k model
 student = load_model_from_wandb(student, model_path = "models/trained_model_v0", 
-                              artifact_path = 'elizabeth-pavlova-university-of-texas-at-austin/gsm8k-finetuning/early-exit-model-373uecef:v0')
+                              artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
 # TODO: ensure no early-exit logic is active for reference model
 
 # Dataset
-dataset = load_dataset("gsm8k", "main")
+dataset = load_dataset("gsm8k", "main")  # TODO: verify/parse answer format
 
 
 def main_rl_training():
@@ -51,7 +51,8 @@ def main_rl_training():
     # TODO: optimizer (e.g., Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5))
     # Check if there are better optimizers for this problem
     optimizer = Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5)
-    # Minimal wandb init (extend later)
+    # we use https://huggingface.co/docs/trl/rloo_trainer  as an inspiration for logging. 
+
     run = wandb.init(
         project="early-exit-RL",
         config=dict(
@@ -78,13 +79,25 @@ def main_rl_training():
                 'completions/max_length': 'Max completion length (tokens)',
                 'completions/clipped_ratio': 'Frac. completions without EOS',
                 'completions/num_eos_tokens': 'Total EOS tokens in batch',
+                # Samples table - deterministic “first-N” sampling  (Every sample_log_interval episodes, we log the first sample_max_rows completions)
+                'samples/generations': 'W&B table with periodic sample generations and per-sample metrics',
+                'samples/prompt_text': 'Original input prompt text for each sample',
+                'samples/completion_text': 'Raw generated completion text for each sample',
+                'samples/verify_reward': 'Verification reward for the sample (1.0 correct, <=0 penalized)',
+                'samples/kl_estimate': 'Average per-token log-prob difference vs reference (student - ref)',
+                'samples/avg_exit_layer': 'Normalized average exit layer used for the sample (0..1)',
+                'samples/gen_len': 'Number of generated tokens (excluding prompt tokens)',
+                'samples/contains_eos': 'Whether the sample generation contained an EOS token',
+                'samples/selection_index': 'Row index within the K completions for the prompt',
+                'samples/selection_policy': 'Policy used for choosing logged completions (first N)',
+                'samples/selection_count': 'Number of completions logged in the samples table',
             }
         )
     )
 
     # Define metric step and categories for clean grouping in W&B UI
     wandb.define_metric('training/episode')
-    for pattern in ['objective/*', 'rewards/*', 'exit/*', 'loss/*', 'completions/*', 'training/*']:
+    for pattern in ['objective/*', 'rewards/*', 'exit/*', 'loss/*', 'completions/*', 'training/*', 'samples/*']:
         wandb.define_metric(pattern, step_metric='training/episode')
 
     # TODO: batching. For simplicity, treat batch_size = 1 here.
@@ -178,6 +191,39 @@ def main_rl_training():
                 'completions/clipped_ratio': clipped_ratio,
                 'completions/num_eos_tokens': num_eos_tokens,
             }
+
+            # Periodic sample generations table
+            if (i % RL_HPARAMS.sample_log_interval) == 0:
+                num_rows = min(len(completions['texts']), RL_HPARAMS.sample_max_rows)
+                columns = [
+                    'episode',
+                    'samples/prompt_text',
+                    'samples/completion_text',
+                    'samples/verify_reward',
+                    'samples/kl_estimate',
+                    'samples/avg_exit_layer',
+                    'samples/gen_len',
+                    'samples/contains_eos',
+                    'samples/selection_index',
+                ]
+                table = wandb.Table(columns=columns)
+                for row_idx in range(num_rows):
+                    full_len = int(seq_lens[row_idx].item())
+                    gen_len = max(0, full_len - int(input_prompt_length))
+                    table.add_data(
+                        i,
+                        prompt,
+                        completions['texts'][row_idx],
+                        float(verify[row_idx].item()),
+                        float(kl_tokens[row_idx].item()),
+                        float(avg_exit_layer[row_idx].item()),
+                        int(gen_len),
+                        bool(contains_eos[row_idx].item()),
+                        int(row_idx),
+                    )
+                log_dict['samples/generations'] = table
+                log_dict['samples/selection_policy'] = 'first'
+                log_dict['samples/selection_count'] = num_rows
 
             wandb.log(log_dict)
 
