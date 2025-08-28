@@ -8,35 +8,20 @@ import torch
 from torch.optim import Adam
 import wandb
 from datasets import load_dataset
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
-from early_exit.util import get_model, load_model, load_model_from_wandb
+from early_exit.util import get_model, load_model_from_wandb
+from early_exit.util import generate_k_completions, center_rewards_per_prompt, weighted_sft_step, get_input_prompt_length
+from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 from shared_utils.load import get_tokenizer, configs_from_yaml
-from shared_utils.generate import generate_text
 from torch.nn.utils.rnn import pad_sequence
 
 device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
 sft_model_path = "models/early_exit_sft_trained"  # TODO: set path to SFT checkpoint
-
-@dataclass
-class RLHyperparams:
-    """
-    Hyperparameters for RL training
-
-    - batch_size: number of p rompts per batch
-    - k: number of rollouts per prompt
-    - beta_kl: weight for KL penalty
-    - lambda_exit: weight for average exit layer penalty
-    """
-    batch_size: int = 1
-    k: int = 2 # TODO: Kept it as 2 for debugging purposes, change back to 4 or more later
-    beta_kl: float = 0.1
-    lambda_exit: float = 0.5
 
 RL_HPARAMS = RLHyperparams()
 
@@ -58,190 +43,6 @@ reference = get_model(model_name, config['model'], device)
 # Dataset
 dataset = load_dataset("gsm8k", "main")  # TODO: verify/parse answer format
 
-# --- Core schema functions ---
-def generate_k_completions(model, prompt, k: int):
-    """
-    Free-generate K completions per prompt with early exits enabled.
-
-    Expected outputs (used later in the pipeline):
-    - completions:
-        - tokens: LongTensor of shape [batch*K, seq_len]; dtype=torch.long
-        - texts: list[str] of length batch*K
-    - exit_info:
-        - avg_exit_layer: FloatTensor of shape [batch*K]; typically in [0, total_exitable_layers] or normalized to [0,1] #removing this
-        - prescribed_exit_layers: Optional[LongTensor] of shape [batch*K, seq_len] for re-scoring
-
-    Typical ranges:
-    - seq_len: 16–512 depending on generation configuration
-    """
-    # TODO: set_transformer_early_exit_mode(model, 'free_generate') and call generate_text(...)
-    #raise NotImplementedError("TODO: implement generate_k_completions")
-
-    set_transformer_early_exit_mode(model, 'free_generate') #are we sure about this and not free generate?
-
-    all_tokens = []
-    all_texts = []
-    all_prescribed_exit_layers = []
-    
-    for p in prompt:
-        for _ in range(k):
-            with torch.no_grad():
-                decoded_response, model_outputs = generate_text(
-                    model=model,
-                    prompt=p,
-                    system_prompt='',
-                    prefiller='',
-                    tokenizer=tokenizer,
-                    generation_config=config['generation'],
-                    device=device
-                )
-
-            sequences, exit_layer_idxs = model_outputs
-            tokens = sequences[0]
-            prescribed_exit_layers = exit_layer_idxs[0]
-            
-            all_tokens.append(tokens)
-            all_texts.append(decoded_response)
-            all_prescribed_exit_layers.append(prescribed_exit_layers)
-    
-    max_seq_len = max(len(tokens) for tokens in all_tokens)
-    padded_tokens = []
-    final_prescribed_layers = [] #no padding since will mess up avg exit layer
-
-    for i, (tokens, exit_layers) in enumerate(zip(all_tokens, all_prescribed_exit_layers)):
-        pad_length = max_seq_len - len(tokens)
-        if pad_length > 0:
-            padded_token = torch.cat([tokens, torch.full((pad_length,), tokenizer.pad_token_id, dtype=tokens.dtype, device=tokens.device)])
-        else:
-            padded_token = tokens
-
-        padded_tokens.append(padded_token)
-        final_prescribed_layers.append(exit_layers)
-
-    completions_tokens = torch.stack(padded_tokens, dim=0)
-
-    completions = {
-        'tokens': completions_tokens,
-        'texts': all_texts
-    }
-
-    exit_info = {
-        'prescribed_exit_layers': final_prescribed_layers
-    }
-    
-    return completions, exit_info
-
-def center_rewards_per_prompt(rewards, batch_size: int, k: int):
-    """
-    Center rewards across the K completions for each prompt (simple baseline).
-    Returns: advantages FloatTensor [batch*K].
-    """
-    rewards = rewards.view(batch_size, k)
-    adv = rewards - rewards.mean(dim=1, keepdim=True)
-    return adv.reshape(-1)
-
-
-def compute_sequence_loglik_student(student_log_likelihoods):
-    """
-    TODO: Add the exit log probs!
-    Returns: FloatTensor [batch*K].
-    """
-    return student_log_likelihoods.sum(-1)
-
-
-@dataclass
-class RolloutBatch:
-    """
-    Container with runtime checks for rollout tensors and metadata.
-
-    - tokens: LongTensor [batch*K, seq_len]
-    - texts: list[str] length batch*K
-    - ref_logprobs: FloatTensor [batch*K, seq_len]
-    - stu_logprobs: FloatTensor [batch*K, seq_len]
-    - prescribed_exit_layers (optional): LongTensor [batch*K, seq_len]
-    - avg_exit_layer (optional): FloatTensor [batch*K]
-    - input_prompt_length (optional): int, number of tokens in the input prompt to exclude from logprobs
-    """
-    tokens: torch.Tensor
-    texts: List[str]
-    ref_logprobs: torch.Tensor
-    stu_logprobs: torch.Tensor
-    prescribed_exit_layers: Optional[torch.Tensor] = None
-    avg_exit_layer: Optional[torch.Tensor] = None
-    input_prompt_length: Optional[int] = None
-    generation_length = property(lambda self: self.tokens.shape[1] - self.input_prompt_length if self.input_prompt_length is not None else self.tokens.shape[1])
-
-    def __post_init__(self) -> None:
-        # tokens
-        assert isinstance(self.tokens, torch.Tensor), "tokens must be a torch.Tensor"
-        assert self.tokens.dtype == torch.long, "tokens must be dtype torch.long"
-        assert self.tokens.dim() == 2, "tokens must be 2D [batch*K, seq_len]"
-        batchK, seq_len = self.tokens.shape
-
-        # texts
-        assert isinstance(self.texts, list), "texts must be a list[str]"
-        assert len(self.texts) == batchK, "len(texts) must equal batch*K"
-        assert all(isinstance(t, str) for t in self.texts), "texts list must contain only strings"
-
-        # logprobs
-        for name, lp in (('ref_logprobs', self.ref_logprobs), ('stu_logprobs', self.stu_logprobs)):
-            assert isinstance(lp, torch.Tensor), f"{name} must be a torch.Tensor"
-            assert torch.is_floating_point(lp), f"{name} must be a floating tensor"
-            # TODO: Check the -1 for the shape. Why generation_length - 1?
-            assert lp.dim() == 2 and tuple(lp.shape) == (batchK, self.generation_length - 1), \
-            f"{name} has shape {lp.shape}, instead it must be [batch*K = {batchK}, generation_length - 1 = {self.generation_length - 1}]"
-
-        # prescribed exit layers (optional)
-        if self.prescribed_exit_layers is not None:
-            pel = self.prescribed_exit_layers
-            assert isinstance(pel, torch.Tensor), "prescribed_exit_layers must be a torch.Tensor"
-            # TODO: Check if we need long dtype for this
-            # assert pel.dtype == torch.long, f"prescribed_exit_layers must be dtype torch.long instead of {pel.dtype}"
-            assert pel.dim() == 2 and tuple(pel.shape) == (batchK, self.generation_length),\
-            f"prescribed_exit_layers has shape = {pel.shape} must be [batch*K = {batchK}, generation_length = {self.generation_length}]"
-
-        # avg exit layer (optional)
-        if self.avg_exit_layer is not None:
-            ael = self.avg_exit_layer
-            assert isinstance(ael, torch.Tensor), "avg_exit_layer must be a torch.Tensor"
-            assert torch.is_floating_point(ael), "avg_exit_layer must be a floating tensor"
-            assert ael.dim() == 1 and tuple(ael.shape) == (batchK,), "avg_exit_layer must be [batch*K]"
-
-def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
-    
-    """Computes loss on one weighted RLOO step, based on unlabelled 
-    equation after equation 8 in https://arxiv.org/pdf/2402.14740v2.pdf. 
-    It is important to detch advantages so that no gradients flow through them.
-    loss = -mean(adv.detach() * seq_loglik_student)
-    Args:
-        advantages (FloatTensor): Shape (batch_size, k) containing the advantage values.
-        log_likelihoods (FloatTensor): Shape (batch_size, k) containing the sum of log_likelihood of next tokens
-    """
-    assert advantages.shape == log_likelihoods.shape, "adv and log_likelihood_gradients must have the same shape"
-    num_exit_samples = RL_HPARAMS.k
-    batch_size = RL_HPARAMS.batch_size
-    advantages = advantages.view(batch_size, num_exit_samples)
-    log_likelihoods = log_likelihoods.view(batch_size, num_exit_samples)
-    return -(advantages.detach() * log_likelihoods).mean(-1)
-
-
-def weighted_sft_step(student_log_likelihoods, advantages, optimizer, num_exit_samples):
-    """
-    Returns: scalar loss (FloatTensor).
-    """
-    optimizer.zero_grad()
-    sequence_log_likelihoods = compute_sequence_loglik_student(student_log_likelihoods)  # [batch*K]
-    loss = weighted_rloo_loss(advantages, sequence_log_likelihoods, num_exit_samples) # should this be average instead of sum?
-    loss.backward()
-    optimizer.step()
-    return loss.detach()
-
-def get_input_prompt_length(tokenizer, prompt):
-    from shared_utils.generate import format_conversation, transform_conversations
-    pre_transformed_conversation = format_conversation(user_prompts = [prompt], system_prompt='')
-    formatted_prompt = transform_conversations(pre_transformed_conversation, prefiller = '')[0]
-    input_prompt_length = len(tokenizer(formatted_prompt)['input_ids'])
-    return input_prompt_length
 
 def main_rl_training():
     """
@@ -295,7 +96,7 @@ def main_rl_training():
         correct_answer = example["answer"]
 
         # 1) Rollouts (student free-generate K)
-        completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k)  # TODO
+        completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k, tokenizer=tokenizer, config=config, device=device)  # TODO
         input_prompt_length = get_input_prompt_length(tokenizer, prompt)  # TODO: very hacky, do it in a cleaner way
         print(f"Input prompt length (in tokens): {input_prompt_length}")
         set_transformer_early_exit_mode(student, 'sft_student')
