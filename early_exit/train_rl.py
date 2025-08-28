@@ -11,7 +11,7 @@ from datasets import load_dataset
 from typing import Optional
 
 from early_exit.util import get_model, load_model_from_wandb
-from early_exit.util import generate_k_completions, center_rewards_per_prompt, weighted_sft_step, get_input_prompt_length
+from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, weighted_sft_step, get_input_prompt_length
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
@@ -32,16 +32,16 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
-# TODO: Change artifact path to sft trained gsm-8k model
+
 student = load_model_from_wandb(student, model_path = "models/trained_model_v0", 
-                              artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
+                              artifact_path = 'elizabeth-pavlova-university-of-texas-at-austin/gsm8k-finetuning/early-exit-model-373uecef:v0')
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
 # TODO: ensure no early-exit logic is active for reference model
 
 # Dataset
-dataset = load_dataset("gsm8k", "main")  # TODO: verify/parse answer format
+dataset = load_dataset("gsm8k", "main")
 
 
 def main_rl_training():
@@ -155,28 +155,26 @@ def main_rl_training():
             num_eos_tokens = int((tokens_tensor == eos_id).sum().item()) if eos_id != -1 else 0
 
             log_dict = {
-                # Objective metrics
-                'objective/rlhf_reward': reward.mean().item(),
-                'rewards/verify_mean': verify.mean().item(),
-                'objective/kl': kl_tokens.mean().item(),
-                'exit/avg_layer': avg_exit_layer.mean().item(),
-                'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
-                # Reward components
-                'rewards/verify_reward_component_mean': verify.mean().item(),
-                'rewards/kl_penalty_component_mean': (RL_HPARAMS.beta_kl * kl_tokens).mean().item(),
-                'rewards/exit_layer_penalty_component_mean': (RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
-
-                # Loss / training progress
-                'loss/policy_avg': float(loss.item() if hasattr(loss, 'item') else loss),
-                'training/lr': optimizer.param_groups[0]['lr'],
-                'training/episode': i,
-
+                # Objective & rewards
+                'objective/rlhf_reward': 'Mean total reward per step',
+                'objective/kl': 'Mean token KL vs reference policy',
+                'objective/non_score_reward': 'Mean of penalty terms (KL + exit)',
+                'rewards/verify_mean': 'Mean task verification reward',
+                'rewards/kl_penalty_component_mean': 'Mean KL penalty contribution',
+                'rewards/exit_layer_penalty_component_mean': 'Mean exit-layer penalty contribution',
+                'rewards/total_reward': 'Mean total reward per step',
+                # Exit
+                'exit/avg_layer': 'Mean prescribed exit layer index',
+                # Loss & training progress
+                'loss/policy_avg': 'Policy loss (RLOO-weighted SFT)',
+                'training/lr': 'Optimizer learning rate',
+                'training/episode': 'Training step index',
                 # Completions
-                'completions/mean_length': seq_lens.mean().item(),
-                'completions/min_length': seq_lens.min().item(),
-                'completions/max_length': seq_lens.max().item(),
-                'completions/clipped_ratio': clipped_ratio,
-                'completions/num_eos_tokens': num_eos_tokens,
+                'completions/mean_length': 'Mean completion length (tokens)',
+                'completions/min_length': 'Min completion length (tokens)',
+                'completions/max_length': 'Max completion length (tokens)',
+                'completions/clipped_ratio': 'Frac. completions without EOS',
+                'completions/num_eos_tokens': 'Total EOS tokens in batch',
             }
 
             wandb.log(log_dict)
