@@ -155,26 +155,28 @@ def main_rl_training():
             num_eos_tokens = int((tokens_tensor == eos_id).sum().item()) if eos_id != -1 else 0
 
             log_dict = {
-                # Objective & rewards
-                'objective/rlhf_reward': 'Mean total reward per step',
-                'objective/kl': 'Mean token KL vs reference policy',
-                'objective/non_score_reward': 'Mean of penalty terms (KL + exit)',
-                'rewards/verify_mean': 'Mean task verification reward',
-                'rewards/kl_penalty_component_mean': 'Mean KL penalty contribution',
-                'rewards/exit_layer_penalty_component_mean': 'Mean exit-layer penalty contribution',
-                'rewards/total_reward': 'Mean total reward per step',
-                # Exit
-                'exit/avg_layer': 'Mean prescribed exit layer index',
-                # Loss & training progress
-                'loss/policy_avg': 'Policy loss (RLOO-weighted SFT)',
-                'training/lr': 'Optimizer learning rate',
-                'training/episode': 'Training step index',
+                # Objective metrics
+                'objective/rlhf_reward': reward.mean().item(),
+                'rewards/verify_mean': verify.mean().item(),
+                'objective/kl': kl_tokens.mean().item(),
+                'exit/avg_layer': avg_exit_layer.mean().item(),
+                'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
+                # Reward components
+                'rewards/verify_reward_component_mean': verify.mean().item(),
+                'rewards/kl_penalty_component_mean': (RL_HPARAMS.beta_kl * kl_tokens).mean().item(),
+                'rewards/exit_layer_penalty_component_mean': (RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
+
+                # Loss / training progress
+                'loss/policy_avg': float(loss.item() if hasattr(loss, 'item') else loss),
+                'training/lr': optimizer.param_groups[0]['lr'],
+                'training/episode': i,
+
                 # Completions
-                'completions/mean_length': 'Mean completion length (tokens)',
-                'completions/min_length': 'Min completion length (tokens)',
-                'completions/max_length': 'Max completion length (tokens)',
-                'completions/clipped_ratio': 'Frac. completions without EOS',
-                'completions/num_eos_tokens': 'Total EOS tokens in batch',
+                'completions/mean_length': seq_lens.mean().item(),
+                'completions/min_length': seq_lens.min().item(),
+                'completions/max_length': seq_lens.max().item(),
+                'completions/clipped_ratio': clipped_ratio,
+                'completions/num_eos_tokens': num_eos_tokens,
             }
 
             wandb.log(log_dict)
