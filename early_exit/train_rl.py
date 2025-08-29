@@ -33,8 +33,8 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
 # TODO: Change artifact path to sft trained gsm-8k model
-#student = load_model_from_wandb(student, model_path = "models/trained_model_v0", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
-student = load_model(student, sft_model_path)
+student = load_model_from_wandb(student, model_path = "models/trained_model_v0", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
+#student = load_model(student, sft_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
@@ -149,7 +149,8 @@ def main_rl_training():
         )
 
         # 3) Reward components
-        verify = compute_verification_rewards(completions['texts'], [correct_answer] * RL_HPARAMS.k)
+        #verify = compute_verification_rewards(completions['texts'], [correct_answer] * RL_HPARAMS.k)
+        verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
         kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs)  # TODO
         avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
         # import ipdb; ipdb.set_trace()

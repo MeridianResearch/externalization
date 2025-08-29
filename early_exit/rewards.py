@@ -44,11 +44,14 @@ def check_format_violations(completion_text):
     
     return penalty
 
-def compute_verification_rewards(completions_text, correct_answers):
+def compute_verification_rewards(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):
 
     rewards = torch.zeros(len(completions_text), dtype=torch.float32)
     
-    for i, completion_text in enumerate(completions_text):
+    for i, full_completion_text in enumerate(completions_text):
+        completion_tokens = completions_tokens[i][input_prompt_length:] #remove prompt
+        completion_text = tokenizer.decode(completion_tokens, skip_special_tokens=True) #tokens to text
+
         ground_truth_idx = i // len(correct_answers) if len(correct_answers) > 1 else 0
         ground_truth = str(correct_answers[ground_truth_idx])
         
