@@ -13,11 +13,11 @@ lora:
 
 generation:
   min_length: 0
-  # top_k: 0.0
-  # top_p: 0.95
+  top_k: 0.0
+  top_p: 1.0
   num_beams: 1
-  # temperature: 0.6
-  do_sample: false
+  temperature: 1.0
+  do_sample: true
   #pad_token_id: 0
   bos_token_id: 151646
   eos_token_id: 151643

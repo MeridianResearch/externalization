@@ -33,8 +33,8 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
 # TODO: Change artifact path to sft trained gsm-8k model
-student = load_model_from_wandb(student, model_path = "models/trained_model_v0", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
-#student = load_model(student, sft_model_path)
+# student = load_model_from_wandb(student, model_path = "models/trained_model_v0", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
+student = load_model(student, sft_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
