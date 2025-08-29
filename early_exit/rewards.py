@@ -123,7 +123,8 @@ def compute_token_logprobs_student(model, tokens, prescribed_exit_layers, input_
     student_next_token_logprobs = compute_next_token_logprobs_from_logits(student_output_scores.logits, tokens)
     # gen_len = tokens.shape[-1] - prescribed_exit_layers.shape[-1] # Check this, is there a -1 needed?
     student_generated_token_logprobs = student_next_token_logprobs[:, input_prompt_length:]
-    return student_generated_token_logprobs
+    student_early_exit_probs = model.early_exit_student_probs(collected_exit_logits)
+    return student_generated_token_logprobs, student_early_exit_probs
 
 def compute_token_logprobs_reference(model, tokens, input_prompt_length):
     """

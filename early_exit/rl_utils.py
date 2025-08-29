@@ -89,12 +89,17 @@ def center_rewards_per_prompt(rewards, batch_size: int, k: int):
     return adv.reshape(-1)
 
 
-def compute_sequence_mean_loglik_student(student_log_likelihoods):
+def compute_sequence_mean_loglik_student(student_log_likelihoods, student_early_exit_logprobs):
     """
     TODO: Add the exit log probs!
     Returns: FloatTensor [batch*K].
     """
-    return student_log_likelihoods.mean(-1)
+    assert student_log_likelihoods.dim() == 2, "student_log_likelihoods must be [batch*K, seq_len]"
+    assert student_early_exit_logprobs.dim() == 2, f"student_early_exit_logprobs must be [batch*K, seq_len], it was instead {student_early_exit_logprobs.shape}"
+    assert student_early_exit_logprobs.shape == student_log_likelihoods.shape, \
+    f"student_early_exit_logprobs (shape = {student_early_exit_logprobs.shape})  must have the same shape as \
+    student_log_likelihoods = {student_log_likelihoods.shape}"
+    return student_log_likelihoods.mean(-1) + student_early_exit_logprobs.mean(-1)
 
 
 def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
@@ -106,7 +111,7 @@ def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
         advantages (FloatTensor): Shape (batch_size, k) containing the advantage values.
         log_likelihoods (FloatTensor): Shape (batch_size, k) containing the sum of log_likelihood of next tokens
     """
-    assert advantages.shape == log_likelihoods.shape, "adv and log_likelihood_gradients must have the same shape"
+    assert advantages.shape == log_likelihoods.shape, "adv and log_likelihoods must have the same shape"
     num_exit_samples = RL_HPARAMS.k
     batch_size = RL_HPARAMS.batch_size
     advantages = advantages.view(batch_size, num_exit_samples)
@@ -114,12 +119,14 @@ def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
     return -(advantages.detach() * log_likelihoods).mean(-1)
 
 
-def weighted_sft_step(student_log_likelihoods, advantages, optimizer, RL_HPARAMS):
+def weighted_sft_step(student_log_likelihoods, student_early_exit_logprobs, advantages, optimizer, RL_HPARAMS):
     """
     Returns: scalar loss (FloatTensor).
     """
     optimizer.zero_grad()
-    sequence_mean_log_likelihoods = compute_sequence_mean_loglik_student(student_log_likelihoods)  # [batch*K]
+    sequence_mean_log_likelihoods = compute_sequence_mean_loglik_student(student_log_likelihoods, 
+                                                                         student_early_exit_logprobs[:, 1:]
+                                                                         ) # ignore first token's exit prob
     loss = weighted_rloo_loss(advantages, sequence_mean_log_likelihoods, RL_HPARAMS)
     loss.backward()
     optimizer.step()
@@ -132,3 +139,21 @@ def get_input_prompt_length(tokenizer, prompt, system_prompt):
     formatted_prompt = transform_conversations(pre_transformed_conversation, prefiller='')[0]
     input_prompt_length = len(tokenizer(formatted_prompt)['input_ids'])
     return input_prompt_length
+
+
+def map_layers_to_indices(layer_tensor, exitable_layer_idxs):
+    """Map layer indices to their positions in exitable_layer_idxs array."""
+    # Handle inf separately
+    inf_mask = torch.isinf(layer_tensor)
+    result = torch.zeros_like(layer_tensor, dtype=torch.long)
+    
+    # Map finite values
+    if (~inf_mask).any():
+        finite_layers = layer_tensor[~inf_mask]
+        for i, target_layer in enumerate(exitable_layer_idxs[:-1]):  # exclude inf
+            result[~inf_mask & (layer_tensor == target_layer)] = i
+    
+    # Map inf values to last index
+    result[inf_mask] = len(exitable_layer_idxs) - 1
+    
+    return result

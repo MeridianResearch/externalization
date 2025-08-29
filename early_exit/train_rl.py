@@ -11,7 +11,7 @@ from datasets import load_dataset
 from typing import Optional
 
 from early_exit.util import get_model, load_model_from_wandb, load_model
-from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, weighted_sft_step, get_input_prompt_length
+from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
@@ -21,7 +21,7 @@ from torch.nn.utils.rnn import pad_sequence
 device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
-sft_model_path = "models/trained_model_v0"  # TODO: set path to SFT checkpoint
+sft_model_path = "models/gsm_8k_model"  # TODO: set path to SFT checkpoint
 
 RL_HPARAMS = RLHyperparams()
 
@@ -54,7 +54,7 @@ def main_rl_training():
     # we use https://huggingface.co/docs/trl/rloo_trainer  as an inspiration for logging. 
 
     run = wandb.init(
-        project="early-exit-RL",
+        project="early-exit-RL-test",
         entity="vkarthik095-university-of-amsterdam",
         config=dict(
             **config,
@@ -127,7 +127,7 @@ def main_rl_training():
                                                         input_prompt_length)  # TODO
         
         prescribed_exit_layers = pad_sequence(exit_info['prescribed_exit_layers'], batch_first=True, padding_value=torch.inf)
-        stu_logprobs = compute_token_logprobs_student(student, 
+        stu_logprobs, student_early_exit_probs = compute_token_logprobs_student(student, 
                                                       completions['tokens'], 
                                                       prescribed_exit_layers=prescribed_exit_layers,
                                                       input_prompt_length=input_prompt_length)  # TODO
@@ -141,7 +141,8 @@ def main_rl_training():
             stu_logprobs=stu_logprobs,
             # prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None),
             prescribed_exit_layers=prescribed_exit_layers,
-            input_prompt_length=input_prompt_length
+            input_prompt_length=input_prompt_length,
+            student_early_exit_probs=student_early_exit_probs
             #avg_exit_layer=exit_info.get('avg_exit_layer', None), #calced in rewards later
         )
 
@@ -158,11 +159,15 @@ def main_rl_training():
         # Normalize advantages by their standard deviation to stabilize learning
         adv_std = advantages.std(unbiased=False) + 1e-8
         #adv_std = 1.
-        advantages = advantages / adv_std
-
-        # 6) Weighted SFT update
+        normalized_advantages = advantages / adv_std
         
-        loss = weighted_sft_step(stu_logprobs, advantages, optimizer, RL_HPARAMS)  # TODO
+        # 6) Weighted SFT update
+        sampled_early_exit_layer_idxs_early = map_layers_to_indices(prescribed_exit_layers, student.exitable_layer_idxs).to(device)
+        student_sampled_exit_logprobs = (student_early_exit_probs + 1e-16).gather(
+            index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).log().squeeze(-1)
+        
+        # import ipdb; ipdb.set_trace()
+        loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, normalized_advantages, optimizer, RL_HPARAMS)  # TODO
         # 7) Logging (schema)
         with torch.no_grad():
             tokens_tensor = completions['tokens']  # [batch*K, seq_len]
@@ -179,22 +184,30 @@ def main_rl_training():
                 'objective/rlhf_reward': reward.mean().item(),
                 'objective/kl': kl_tokens.mean().item(),
                 'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
-                'exit/avg_layer': avg_exit_layer.mean().item(),
+                
+                # Exit metrics
                 'exit/min_layer': avg_exit_layer.min().item(),
                 'exit/max_layer': avg_exit_layer.max().item(),
+                'exit/avg_layer': avg_exit_layer.mean().item(),
                 'exit/std_layer': avg_exit_layer.std(unbiased=False).item(),
+                
                 # Reward components
                 'rewards/verify_mean': verify.mean().item(),
                 'rewards/kl_penalty_component_mean': (RL_HPARAMS.beta_kl * kl_tokens).mean().item(),
                 'rewards/exit_layer_penalty_component_mean': (RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
 
                 # Training advantage
-                'training/advantage_mean': advantages.mean().item(),
-                'training/advantage_std': advantages.std(unbiased=False).item(),
                 'training/lr': optimizer.param_groups[0]['lr'],
                 'training/episode': i,
                 'training/loss': float(loss.item() if hasattr(loss, 'item') else loss),
-                'training/log_probs_mean': stu_logprobs.mean().item(),
+                # 'training/advantage_mean': advantages.mean().item(),
+                'training/advantage_std': advantages.std(unbiased=False).item(),
+                'training/total_neg_logprobs_mean': -(stu_logprobs.mean().item() + student_sampled_exit_logprobs.mean().item()),
+                
+                # Logprobs Mean
+                'neg_logprobs/total': -(stu_logprobs.mean().item() + student_sampled_exit_logprobs.mean().item()),
+                'neg_logprobs/prediction': -stu_logprobs.mean().item(),
+                'neg_logprobs/exit': -student_sampled_exit_logprobs.mean().item(),
 
                 # Completions
                 'completions/mean_length': seq_lens.mean().item(),
@@ -234,8 +247,8 @@ def main_rl_training():
                         int(row_idx),
                     )
                 log_dict['samples/generations'] = table
-                log_dict['samples/selection_policy'] = 'first'
-                log_dict['samples/selection_count'] = num_rows
+                # log_dict['samples/selection_policy'] = 'first'
+                # log_dict['samples/selection_count'] = num_rows
 
             wandb.log(log_dict)
 
