@@ -62,43 +62,56 @@ def main_rl_training():
             model_exitable_layers=getattr(student, 'exitable_layer_idxs', []).tolist() if hasattr(student, 'exitable_layer_idxs') else None,
             metric_descriptions={
                 # Objective & rewards
-                'objective/rlhf_reward': 'Mean total reward per step',
-                'objective/kl': 'Mean token KL vs reference policy',
-                'objective/non_score_reward': 'Mean of penalty terms (KL + exit)',
-                'rewards/verify_mean': 'Mean task verification reward',
-                'rewards/kl_penalty_component_mean': 'Mean KL penalty contribution',
-                'rewards/exit_layer_penalty_component_mean': 'Mean exit-layer penalty contribution',
+                'objective/rlhf_reward': 'Mean total reward per step: verification reward minus beta_kl×token-level KL estimate and lambda_exit×normalized average exit layer.',
+                'objective/kl': 'Mean over generated tokens of (log p_student − log p_reference). This is a token-level log-probability gap, not the full softmax KL.',
+                'objective/non_score_reward': 'Mean of the penalty-only terms (− beta_kl×KL − lambda_exit×avg_exit). Higher magnitude indicates stronger regularization pressure.',
+                'rewards/verify_mean': "Mean verification reward from the final '#### <answer>' extraction. Exact match = 1.0, flexible numeric match = 0.5, wrong = 0.0, no answer/format errors = −1.0, minus small format penalties.",
+                'rewards/kl_penalty_component_mean': 'Mean of the KL penalty contribution beta_kl×(token-level KL estimate).',
+                'rewards/exit_layer_penalty_component_mean': 'Mean of the exit-layer penalty contribution lambda_exit×normalized average exit layer.',
                 # Exit
-                'exit/avg_layer': 'Mean prescribed exit layer index',
-                'exit/min_layer': 'Min prescribed exit layer index (normalized 0..1)',
-                'exit/max_layer': 'Max prescribed exit layer index (normalized 0..1)',
-                'exit/std_layer': 'Std of prescribed exit layer index (normalized 0..1)',
+                'exit/avg_layer': 'Mean normalized exit layer index used during generation (0 = first layer, 1 = final layer).',
+                'exit/min_layer': 'Minimum normalized exit layer index within the batch (0..1).',
+                'exit/max_layer': 'Maximum normalized exit layer index within the batch (0..1).',
+                'exit/std_layer': 'Standard deviation of normalized exit layer indices within the batch (0..1).',
                 # Loss & training progress
-                'loss/policy_avg': 'Policy loss (RLOO-weighted SFT)',
-                'training/lr': 'Optimizer learning rate',
-                'training/episode': 'Training step index',
+                'loss/policy_avg': 'RLOO-weighted SFT loss: − mean(adv.detach() × (mean token log-likelihood + mean early-exit log-prob)).',
+                'training/lr': 'Current optimizer learning rate.',
+                'training/episode': 'Training step index used as the x-axis step for metrics.',
+                'training/loss': 'Scalar training loss returned by the weighted SFT step for this episode.',
+                'training/advantage_std': 'Standard deviation of per-sample advantages before normalization (unbiased=False).',
+                'training/total_neg_logprobs_mean': 'Mean negative log-probability across token prediction and exit selection; lower is better.',
+                # Log-prob breakdown
+                'neg_logprobs/total': 'Mean negative log-prob across token prediction and early-exit selection: −(mean token log-likelihood + mean exit log-prob).',
+                'neg_logprobs/prediction': 'Mean negative token log-likelihood over generated tokens (− mean log p_student).',
+                'neg_logprobs/exit': 'Mean negative early-exit log-prob for the sampled exit layer positions.',
                 # Completions
-                'completions/mean_length': 'Mean completion length (tokens)',
-                'completions/min_length': 'Min completion length (tokens)',
-                'completions/max_length': 'Max completion length (tokens)',
-                'completions/clipped_ratio': 'Frac. completions without EOS',
-                'completions/num_eos_tokens': 'Total EOS tokens in batch',
+                'completions/mean_length': 'Mean sequence length in tokens (including prompt; excludes padding).',
+                'completions/min_length': 'Minimum sequence length in tokens (including prompt; excludes padding).',
+                'completions/max_length': 'Maximum sequence length in tokens (including prompt; excludes padding).',
+                'completions/clipped_ratio': 'Fraction of sequences without an EOS token (likely due to max-length clipping).',
+                'completions/num_eos_tokens': 'Total number of EOS tokens observed across the batch.',
                 # Samples table - deterministic “first-N” sampling  (Every sample_log_interval episodes, we log the first sample_max_rows completions)
-                'samples/generations': 'W&B table with periodic sample generations and per-sample metrics',
-                'samples/prompt_text': 'Original input prompt text for each sample',
-                'samples/completion_text': 'Raw generated completion text for each sample',
-                'samples/correct_answer': 'Correct answer for the prompt (extracted from dataset)',
-                'samples/verify_reward': 'Verification reward for the sample (1.0 correct, <=0 penalized)',
-                'samples/kl_estimate': 'Average per-token log-prob difference vs reference (student - ref)',
-                'samples/avg_exit_layer': 'Normalized average exit layer used for the sample (0..1)',
-                'samples/gen_len': 'Number of generated tokens (excluding prompt tokens)',
-                'samples/contains_eos': 'Whether the sample generation contained an EOS token',
-                'samples/selection_index': 'Row index within the K completions for the prompt',
-                'samples/selection_policy': 'Policy used for choosing logged completions (first N)',
-                'samples/selection_count': 'Number of completions logged in the samples table',
+                'samples/generations': 'W&B table with periodic sample generations and per-sample metrics for quick qualitative inspection.',
+                'samples/prompt_text': 'Original input prompt text for each sample.',
+                'samples/completion_text': 'Raw generated completion text for each sample.',
+                'samples/correct_answer': 'Correct answer for the prompt (parsed from the dataset).',
+                'samples/verify_reward': 'Verification reward for the sample using the same rules as rewards/verify_mean.',
+                'samples/kl_estimate': 'Token-level log-probability gap mean (student − reference) for the sample.',
+                'samples/avg_exit_layer': 'Normalized average exit layer used for the sample (0..1).',
+                'samples/gen_len': 'Number of generated tokens excluding the prompt tokens.',
+                'samples/contains_eos': 'Whether the sample generation contained an EOS token.',
+                'samples/selection_index': 'Row index within the K completions for the prompt.',
             }
         )
     )
+
+    # Log a one-time table of metric descriptions for convenient reference in W&B
+    metric_descs = run.config.get('metric_descriptions', {}) if run is not None else {}
+    if isinstance(metric_descs, dict) and len(metric_descs) > 0:
+        desc_table = wandb.Table(columns=['metric', 'description'])
+        for key, desc in metric_descs.items():
+            desc_table.add_data(key, desc)
+        wandb.log({'meta/metric_descriptions': desc_table})
 
     # Define metric step and categories for clean grouping in W&B UI
     wandb.define_metric('training/episode')
