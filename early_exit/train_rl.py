@@ -13,7 +13,7 @@ from typing import Optional
 from early_exit.util import get_model, load_model_from_wandb, load_model
 from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length
 from early_exit.rl_types import RLHyperparams, RolloutBatch
-from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer
+from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from torch.nn.utils.rnn import pad_sequence
@@ -87,6 +87,7 @@ def main_rl_training():
                 'samples/generations': 'W&B table with periodic sample generations and per-sample metrics',
                 'samples/prompt_text': 'Original input prompt text for each sample',
                 'samples/completion_text': 'Raw generated completion text for each sample',
+                'samples/correct_answer': 'Correct answer for the prompt (extracted from dataset)',
                 'samples/verify_reward': 'Verification reward for the sample (1.0 correct, <=0 penalized)',
                 'samples/kl_estimate': 'Average per-token log-prob difference vs reference (student - ref)',
                 'samples/avg_exit_layer': 'Normalized average exit layer used for the sample (0..1)',
@@ -224,6 +225,7 @@ def main_rl_training():
                     'episode',
                     'samples/prompt_text',
                     'samples/completion_text',
+                    'samples/correct_answer',
                     'samples/verify_reward',
                     'samples/kl_estimate',
                     'samples/avg_exit_layer',
@@ -239,6 +241,7 @@ def main_rl_training():
                         i,
                         prompt,
                         completions['texts'][row_idx],
+                        extract_solution(correct_answer),
                         float(verify[row_idx].item()),
                         float(kl_tokens[row_idx].item()),
                         float(avg_exit_layer[row_idx].item()),
