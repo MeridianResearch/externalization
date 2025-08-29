@@ -107,6 +107,7 @@ def main_rl_training():
 
     # TODO: batching. For simplicity, treat batch_size = 1 here.
     train_dataset = dataset["train"]
+    table_history = []
     for i, example in enumerate(train_dataset):
 
 
@@ -233,11 +234,10 @@ def main_rl_training():
                     'samples/contains_eos',
                     'samples/selection_index',
                 ]
-                table = wandb.Table(columns=columns)
                 for row_idx in range(num_rows):
                     full_len = int(seq_lens[row_idx].item())
                     gen_len = max(0, full_len - int(input_prompt_length))
-                    table.add_data(
+                    table_history.append([
                         i,
                         prompt,
                         completions['texts'][row_idx],
@@ -247,8 +247,11 @@ def main_rl_training():
                         float(avg_exit_layer[row_idx].item()),
                         int(gen_len),
                         bool(contains_eos[row_idx].item()),
-                        int(row_idx),
-                    )
+                        int(row_idx)
+                    ])
+                table = wandb.Table(columns=columns)
+                for row in table_history:
+                    table.add_data(*row)
                 log_dict['samples/generations'] = table
                 # log_dict['samples/selection_policy'] = 'first'
                 # log_dict['samples/selection_count'] = num_rows
