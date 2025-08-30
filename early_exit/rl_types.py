@@ -73,8 +73,8 @@ class RolloutBatch:
             assert isinstance(lp, torch.Tensor), f"{name} must be a torch.Tensor"
             assert torch.is_floating_point(lp), f"{name} must be a floating tensor"
             # TODO: Check the -1 for the shape. Why generation_length - 1?
-            assert lp.dim() == 2 and tuple(lp.shape) == (batchK, self.generation_length - 1), \
-            f"{name} has shape {lp.shape}, instead it must be [batch*K = {batchK}, generation_length - 1 = {self.generation_length - 1}]"
+            assert lp.dim() == 2 and tuple(lp.shape) == (batchK, self.generation_length), \
+            f"{name} has shape {lp.shape}, instead it must be [batch*K = {batchK}, generation_length = {self.generation_length}]"
 
         # prescribed exit layers (optional)
         if self.prescribed_exit_layers is not None:

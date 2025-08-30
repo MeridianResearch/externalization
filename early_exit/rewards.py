@@ -122,11 +122,11 @@ def compute_token_logprobs_student(model, tokens, prescribed_exit_layers, input_
     """
     # TODO: Should the model be in a free generation mode or the student mode? Add assert statement accordingly.
     # Current implementation assumes student mode.
+    assert tokens.shape[-1] - prescribed_exit_layers.shape[-1] == input_prompt_length, "Mismatch in prescripted exit layers and prompt length"
     student_output_scores, collected_exit_logits = model(tokens, prescribed_exit_layer_idxs = prescribed_exit_layers) # [batch * samples, full length, vocabulary]
     student_next_token_logprobs = compute_next_token_logprobs_from_logits(student_output_scores.logits, tokens)
-    # gen_len = tokens.shape[-1] - prescribed_exit_layers.shape[-1] # Check this, is there a -1 needed?
-    student_generated_token_logprobs = student_next_token_logprobs[:, input_prompt_length:]
-    student_early_exit_probs = model.early_exit_student_probs(collected_exit_logits)
+    student_generated_token_logprobs = student_next_token_logprobs[:, input_prompt_length-1:] # the input_promt_length -1 is to capture all the generated tokens, not a trivial thing
+    student_early_exit_probs = model.early_exit_student_probs(collected_exit_logits) 
     return student_generated_token_logprobs, student_early_exit_probs
 
 def compute_token_logprobs_reference(model, tokens, input_prompt_length):
@@ -146,7 +146,7 @@ def compute_token_logprobs_reference(model, tokens, input_prompt_length):
     # raise NotImplementedError("TODO: implement compute_token_logprobs_reference")
     outputs = model(tokens) # [batch * samples, full length, vocabulary]
     next_token_logprobs = compute_next_token_logprobs_from_logits(outputs['logits'], tokens)
-    reference_generated_ntp_logprobs = next_token_logprobs[:, input_prompt_length:]
+    reference_generated_ntp_logprobs = next_token_logprobs[:, input_prompt_length-1:] # the input_promt_length -1 is to capture all the generated tokens, not a trivial thing
     return reference_generated_ntp_logprobs
 
 

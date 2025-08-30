@@ -115,7 +115,7 @@ def main_rl_training():
 
     # Define metric step and categories for clean grouping in W&B UI
     wandb.define_metric('training/episode')
-    for pattern in ['objective/*', 'rewards/*', 'exit/*', 'loss/*', 'completions/*', 'training/*', 'samples/*']:
+    for pattern in ['objective/*', 'rewards/*', 'exit/*', 'loss/*', 'completions/*', 'training/*', 'samples/*', 'neg_logprobs/*']:
         wandb.define_metric(pattern, step_metric='training/episode')
 
     # TODO: batching. For simplicity, treat batch_size = 1 here.
