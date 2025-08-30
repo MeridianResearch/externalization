@@ -158,35 +158,35 @@ def map_layers_to_indices(layer_tensor, exitable_layer_idxs):
     
     return result
 
-def create_attention_mask_from_tokens(tokens, pad_token_id: int):
-    """
-    Create an attention mask from token IDs, preserving the first EOS token
-    that marks the actual end of sequence.
+# def create_attention_mask_from_tokens(tokens, pad_token_id: int):
+#     """
+#     Create an attention mask from token IDs, preserving the first EOS token
+#     that marks the actual end of sequence.
     
-    Args:
-        tokens: Token tensor of shape [batch_size, seq_len]
-        pad_token_id: ID of the padding token (often same as EOS)
+#     Args:
+#         tokens: Token tensor of shape [batch_size, seq_len]
+#         pad_token_id: ID of the padding token (often same as EOS)
     
-    Returns:
-        Attention mask of shape [batch_size, seq_len] where 1 = real token, 0 = padding
-    """
-    assert tokens.dim() == 2, "tokens must be of shape [batch_size, seq_len]"
-    batch_size, seq_len = tokens.shape
-    mask = torch.ones_like(tokens, dtype=torch.float32)
+#     Returns:
+#         Attention mask of shape [batch_size, seq_len] where 1 = real token, 0 = padding
+#     """
+#     assert tokens.dim() == 2, "tokens must be of shape [batch_size, seq_len]"
+#     batch_size, seq_len = tokens.shape
+#     mask = torch.ones_like(tokens, dtype=torch.float32)
     
-    for i in range(batch_size):
-        # Find the first occurrence of pad_token_id (real EOS)
-        pad_positions = (tokens[i] == pad_token_id).nonzero(as_tuple=False)
+#     for i in range(batch_size):
+#         # Find the first occurrence of pad_token_id (real EOS)
+#         pad_positions = (tokens[i] == pad_token_id).nonzero(as_tuple=False)
         
-        if len(pad_positions) > 0:
-            # Keep the first EOS, mask everything after it
-            first_eos_pos = pad_positions[0].item()
-            mask[i, first_eos_pos + 1:] = 0  # Mask everything AFTER the first EOS
-            # The first EOS at position first_eos_pos remains with mask=1
+#         if len(pad_positions) > 0:
+#             # Keep the first EOS, mask everything after it
+#             first_eos_pos = pad_positions[0].item()
+#             mask[i, first_eos_pos + 1:] = 0  # Mask everything AFTER the first EOS
+#             # The first EOS at position first_eos_pos remains with mask=1
     
-    return mask
+#     return mask
 
-def apply_masking(logprobs, tokens, input_prompt_length):
-    assert tokens.shape[-1] - logprobs.shape[-1] == input_prompt_length
-    generated_tokens = tokens[:, input_prompt_length:]
-    mask = create_attention_mask_from_tokens(generated_tokens, pad_token_id=tokenizer.)  # Assuming pad_token_id is 0
+# def apply_masking(logprobs, tokens, input_prompt_length):
+#     assert tokens.shape[-1] - logprobs.shape[-1] == input_prompt_length
+#     generated_tokens = tokens[:, input_prompt_length:]
+#     mask = create_attention_mask_from_tokens(generated_tokens, pad_token_id=tokenizer.)  # Assuming pad_token_id is 0
