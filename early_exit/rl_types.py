@@ -53,7 +53,7 @@ class RolloutBatch:
     prescribed_exit_layers: Optional[torch.Tensor] = None
     avg_exit_layer: Optional[torch.Tensor] = None
     input_prompt_length: Optional[int] = None
-    student_early_exit_probs: Optional[torch.Tensor] = None
+    student_early_exit_logprobs: Optional[torch.Tensor] = None
     generation_length = property(lambda self: self.tokens.shape[1] - self.input_prompt_length if self.input_prompt_length is not None else self.tokens.shape[1])
 
     def __post_init__(self) -> None:
@@ -94,8 +94,8 @@ class RolloutBatch:
             assert ael.dim() == 1 and tuple(ael.shape) == (batchK,), "avg_exit_layer must be [batch*K]"
             
         # student early exit probs (optional)
-        if self.student_early_exit_probs is not None:
-            seep = self.student_early_exit_probs
+        if self.student_early_exit_logprobs is not None:
+            seep = self.student_early_exit_logprobs
             assert isinstance(seep, torch.Tensor), "student_early_exit_probs must be a torch.Tensor"
             assert torch.is_floating_point(seep), "student_early_exit_probs must be a floating tensor"
             assert seep.dim() == 3 and tuple(seep.shape) == (batchK, self.generation_length, seep.shape[2]), \

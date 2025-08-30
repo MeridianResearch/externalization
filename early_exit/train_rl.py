@@ -11,7 +11,7 @@ from datasets import load_dataset
 from typing import Optional
 
 from early_exit.util import get_model, load_model_from_wandb, load_model
-from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length
+from early_exit.rl_utils import apply_masking, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
@@ -142,12 +142,16 @@ def main_rl_training():
                                                         input_prompt_length)  # TODO
         
         prescribed_exit_layers = pad_sequence(exit_info['prescribed_exit_layers'], batch_first=True, padding_value=torch.inf)
-        stu_logprobs, student_early_exit_probs = compute_token_logprobs_student(student, 
+        stu_logprobs, student_early_exit_logprobs = compute_token_logprobs_student(student, 
                                                       completions['tokens'], 
                                                       prescribed_exit_layers=prescribed_exit_layers,
                                                       input_prompt_length=input_prompt_length)  # TODO
         
-        # import ipdb; ipdb.set_trace()
+        stu_logprobs = apply_masking(stu_logprobs, completions['tokens'], input_prompt_length, tokenizer.pad_token_id)
+        student_early_exit_logprobs = apply_masking(student_early_exit_logprobs, completions['tokens'], input_prompt_length, 
+                                                 tokenizer.pad_token_id, mode = 'early_exit_probs')
+        ref_logprobs = apply_masking(ref_logprobs, completions['tokens'], input_prompt_length, tokenizer.pad_token_id)
+        
         # Runtime validation of rollout tensors (dtype/shape checks)
         _ = RolloutBatch(
             tokens=completions['tokens'],
@@ -157,7 +161,7 @@ def main_rl_training():
             # prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None),
             prescribed_exit_layers=prescribed_exit_layers,
             input_prompt_length=input_prompt_length,
-            student_early_exit_probs=student_early_exit_probs
+            student_early_exit_logprobs=student_early_exit_logprobs
             #avg_exit_layer=exit_info.get('avg_exit_layer', None), #calced in rewards later
         )
 
@@ -179,8 +183,8 @@ def main_rl_training():
         
         # 6) Weighted SFT update
         sampled_early_exit_layer_idxs_early = map_layers_to_indices(prescribed_exit_layers, student.exitable_layer_idxs).to(device)
-        student_sampled_exit_logprobs = (student_early_exit_probs + 1e-16).gather(
-            index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).log().squeeze(-1)
+        student_sampled_exit_logprobs = student_early_exit_logprobs.gather(
+            index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).squeeze(-1)
         
         # import ipdb; ipdb.set_trace()
         loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, normalized_advantages, optimizer, RL_HPARAMS)  # TODO

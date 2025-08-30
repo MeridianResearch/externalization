@@ -126,8 +126,8 @@ def compute_token_logprobs_student(model, tokens, prescribed_exit_layers, input_
     student_output_scores, collected_exit_logits = model(tokens, prescribed_exit_layer_idxs = prescribed_exit_layers) # [batch * samples, full length, vocabulary]
     student_next_token_logprobs = compute_next_token_logprobs_from_logits(student_output_scores.logits, tokens)
     student_generated_token_logprobs = student_next_token_logprobs[:, input_prompt_length-1:] # the input_promt_length -1 is to capture all the generated tokens, not a trivial thing
-    student_early_exit_probs = model.early_exit_student_probs(collected_exit_logits) 
-    return student_generated_token_logprobs, student_early_exit_probs
+    student_early_exit_logprobs = (model.early_exit_student_probs(collected_exit_logits) + 1e-16).log() 
+    return student_generated_token_logprobs, student_early_exit_logprobs
 
 def compute_token_logprobs_reference(model, tokens, input_prompt_length):
     """
