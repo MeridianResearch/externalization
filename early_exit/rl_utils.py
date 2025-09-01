@@ -1,6 +1,9 @@
 import torch
 from torch.optim import Adam
 
+from datasets import load_dataset
+import pandas as pd
+
 from early_exit.patching import set_transformer_early_exit_mode
 from shared_utils.generate import generate_text
 from typing import List
@@ -310,14 +313,12 @@ Brief explanation: [your reasoning]
     
     eval_text = eval_result.completion
     
-    # Initialize default scores
     coherence_score = 0
     completeness_score = 0
     clarity_score = 0
     no_repetition_score = 0
     overall_score = 0
     
-    # Parse individual scores from the response
     for line in eval_text.split('\n'):
         line = line.strip()
         if line.startswith('Coherence:'):
@@ -331,13 +332,13 @@ Brief explanation: [your reasoning]
         elif line.startswith('Overall:'):
             overall_score = int(line.split(':')[1].strip().split('/')[0])
     
-    # Extract explanation (everything after "Brief explanation:")
+    #extract explanation (everything after "Brief explanation:")
     explanation = ""
     explanation_start = eval_text.find("Brief explanation:")
     if explanation_start != -1:
         explanation = eval_text[explanation_start + len("Brief explanation:"):].strip()
     else:
-        explanation = eval_text  # Fallback to full text if format is different
+        explanation = eval_text
     
     return {
         'coherence': coherence_score,
@@ -347,3 +348,57 @@ Brief explanation: [your reasoning]
         'average': overall_score / 4.0 if overall_score > 0 else (coherence_score + completeness_score + clarity_score + no_repetition_score) / 4.0,
         'explanation': explanation
     }
+
+def load_gsm8k_with_difficulty():
+    gsm8k_dataset = load_dataset("gsm8k", "main")
+    difficulty_dataset = load_dataset("lime-nlp/GSM8K_Difficulty", 'Difficulty Score')
+    difficulty_df = pd.DataFrame(difficulty_dataset['train'])
+    
+    def categorize_difficulty(score):
+        if score > 90:
+            return "Easy"
+        elif score >= 70:
+            return "Medium"
+        else:
+            return "Hard"
+    
+    difficulty_df['difficulty_category'] = difficulty_df['solved_percentage'].apply(categorize_difficulty)
+    difficulty_lookup = dict(zip(difficulty_df['problem'], difficulty_df[['solved_percentage', 'difficulty_category']].to_dict('records')))
+    
+    return gsm8k_dataset, difficulty_lookup
+
+
+def compute_accuracy_by_difficulty(verify_rewards, difficulty_categories):
+
+    sample_labels = compute_sample_labels(verify_rewards)
+    labels = sample_labels['labels']
+    
+    difficulty_stats = {
+        'Easy': {'correct': 0, 'good_format': 0, 'total': 0},
+        'Medium': {'correct': 0, 'good_format': 0, 'total': 0},
+        'Hard': {'correct': 0, 'good_format': 0, 'total': 0},
+        'Unknown': {'correct': 0, 'good_format': 0, 'total': 0}
+    }
+    
+    for label, difficulty in zip(labels, difficulty_categories):
+        difficulty_stats[difficulty]['total'] += 1
+        
+        if label['correctness'] == 'correct_format':
+            difficulty_stats[difficulty]['correct'] += 1
+        
+        if label['format_quality'] == 'good_format':
+            difficulty_stats[difficulty]['good_format'] += 1
+    
+    results = {}
+    for difficulty in ['Easy', 'Medium', 'Hard', 'Unknown']:
+        total = difficulty_stats[difficulty]['total']
+        if total > 0:
+            format_acc = difficulty_stats[difficulty]['good_format'] / total
+            answer_acc = difficulty_stats[difficulty]['correct'] / total
+            results[f'{difficulty.lower()}_format_accuracy'] = format_acc
+            results[f'{difficulty.lower()}_answer_accuracy'] = answer_acc
+        else:
+            results[f'{difficulty.lower()}_format_accuracy'] = 0.0
+            results[f'{difficulty.lower()}_answer_accuracy'] = 0.0
+    
+    return results

@@ -10,9 +10,10 @@ import wandb
 from datasets import load_dataset
 from typing import Optional
 import asyncio
+import pandas as pd
 
 from early_exit.util import get_model, load_model_from_wandb, load_model
-from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels
+from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
@@ -43,7 +44,8 @@ reference = get_model(model_name, config['model'], device)
 # TODO: ensure no early-exit logic is active for reference model
 
 # Dataset
-dataset = load_dataset("gsm8k", "main")  # TODO: verify/parse answer format
+#dataset = load_dataset("gsm8k", "main")  # TODO: verify/parse answer format
+dataset, difficulty_lookup = load_gsm8k_with_difficulty()
 
 
 def main_rl_training():
@@ -92,25 +94,32 @@ def main_rl_training():
                 'completions/max_length': 'Maximum sequence length in tokens (including prompt; excludes padding).',
                 'completions/clipped_ratio': 'Fraction of sequences without an EOS token (likely due to max-length clipping).',
                 'completions/num_eos_tokens': 'Total number of EOS tokens observed across the batch.',
+                # Accuracy metrics (overall and by difficulty)
+                #'accuracy/correct_rate': 'Fraction of samples with perfect correctness (reward = 1.0).',
+                #'accuracy/partial_rate': 'Fraction of samples with partial correctness (reward = 0.5).',
+                #'accuracy/incorrect_rate': 'Fraction of samples with incorrect answers (reward = 0.0).',
+                #'accuracy/format_error_rate': 'Fraction of samples with format errors (reward = -1.0).',
+                #'accuracy/good_format_rate': 'Fraction of samples with proper "####" format.',
+                'accuracy/answer_accuracy': 'Overall fraction of samples with correct and properly formatted answers.',
+                'accuracy/format_accuracy': 'Overall fraction of samples with proper format.',
+                'accuracy/easy_answer_accuracy': 'Answer accuracy for Easy difficulty problems.',
+                'accuracy/easy_format_accuracy': 'Format accuracy for Easy difficulty problems.',
+                'accuracy/medium_answer_accuracy': 'Answer accuracy for Medium difficulty problems.',
+                'accuracy/medium_format_accuracy': 'Format accuracy for Medium difficulty problems.',
+                'accuracy/hard_answer_accuracy': 'Answer accuracy for Hard difficulty problems.',
+                'accuracy/hard_format_accuracy': 'Format accuracy for Hard difficulty problems.',
                 # Samples table - deterministic “first-N” sampling  (Every sample_log_interval episodes, we log the first sample_max_rows completions)
                 'samples/generations': 'W&B table with periodic sample generations and per-sample metrics for quick qualitative inspection.',
                 'samples/prompt_text': 'Original input prompt text for each sample.',
                 'samples/completion_text': 'Raw generated completion text for each sample.',
                 'samples/correct_answer': 'Correct answer for the prompt (parsed from the dataset).',
+                'samples/difficulty_category': 'Difficulty category: Easy, Medium, Hard',
                 'samples/verify_reward': 'Verification reward for the sample using the same rules as rewards/verify_mean.',
                 'samples/kl_estimate': 'Token-level log-probability gap mean (student − reference) for the sample.',
                 'samples/avg_exit_layer': 'Normalized average exit layer used for the sample (0..1).',
                 'samples/gen_len': 'Number of generated tokens excluding the prompt tokens.',
                 'samples/contains_eos': 'Whether the sample generation contained an EOS token.',
                 'samples/selection_index': 'Row index within the K completions for the prompt.',
-                # Accuracy metrics (similar to reference implementation)
-                #'accuracy/correct_rate': 'Fraction of samples with perfect correctness (reward = 1.0).',
-                #'accuracy/partial_rate': 'Fraction of samples with partial correctness (reward = 0.5).',
-                #'accuracy/incorrect_rate': 'Fraction of samples with incorrect answers (reward = 0.0).',
-                #'accuracy/format_error_rate': 'Fraction of samples with format errors (reward = -1.0).',
-                #'accuracy/good_format_rate': 'Fraction of samples with proper "####" format.',
-                'accuracy/answer_accuracy': 'Fraction of samples with correct and properly formatted answers (similar to answer_accuracy in reference).',
-                'accuracy/format_accuracy': 'Fraction of samples with proper format (similar to format_accuracy in reference).',
                 # Sample table labels
                 'samples/correctness_label': 'Correctness category: correct (1.0), partial (>=0.5), incorrect (0.0), format_error (>=-1.0).',
                 'samples/format_label': 'Format quality: good_format (contains 1 #### with integer after and nothing else)',
@@ -134,11 +143,18 @@ def main_rl_training():
     # TODO: batching. For simplicity, treat batch_size = 1 here.
     train_dataset = dataset["train"]
     table_history = []
+
     for i, example in enumerate(train_dataset):
 
 
         prompt = example["question"]
         correct_answer = example["answer"]
+
+        difficulty_info = difficulty_lookup.get(prompt, {
+            'solved_percentage': None,
+            'difficulty_category': 'Unknown'
+        })
+        difficulty_category = difficulty_info['difficulty_category']
 
         # 1) Rollouts (student free-generate K)
         completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k, 
@@ -175,13 +191,17 @@ def main_rl_training():
         )
 
         # 3) Reward components
-        #verify = compute_verification_rewards(completions['texts'], [correct_answer] * RL_HPARAMS.k)
         verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
-        kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs)  # TODO
+        kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs)
         avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
 
         # 3.1) Compute sample labels (similar to format_accuracy/answer_accuracy in reference)
         sample_labels = compute_sample_labels(verify)
+
+        difficulty_categories = [difficulty_category] * RL_HPARAMS.k
+        #compute accuracy metrics by difficulty (all samples have same difficulty as same prompt)
+        difficulty_accuracies = compute_accuracy_by_difficulty(verify, difficulty_categories)
+
         # import ipdb; ipdb.set_trace()
         # 4) Total reward per sequence (simple linear combination)
         reward = verify.to(device) - RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)  # TODO: tune weights, consider normalization
@@ -258,6 +278,8 @@ def main_rl_training():
                 'accuracy/format_accuracy': sample_labels['stats']['format_accuracy'],
             }
 
+            log_dict.update(difficulty_accuracies) #add difficulty accuracies to log dict
+
             # Periodic sample generations table
             if (i % RL_HPARAMS.sample_log_interval) == 0:
                 num_rows = min(len(completions['texts']), RL_HPARAMS.sample_max_rows)
@@ -293,6 +315,7 @@ def main_rl_training():
                     'samples/prompt_text',
                     'samples/completion_text',
                     'samples/correct_answer',
+                    'samples/difficulty_category',
                     'samples/verify_reward',
                     'samples/kl_estimate',
                     'samples/avg_exit_layer',
@@ -319,6 +342,7 @@ def main_rl_training():
                         prompt,
                         completions['texts'][row_idx],
                         extract_solution(correct_answer),
+                        difficulty_category,
                         float(verify[row_idx].item()),
                         float(kl_tokens[row_idx].item()),
                         float(avg_exit_layer[row_idx].item()),
@@ -334,7 +358,7 @@ def main_rl_training():
                         float(coherence_result['average']),
                         coherence_result['explanation']
                     ])
-                    
+
                 table = wandb.Table(columns=columns)
                 for row in table_history:
                     table.add_data(*row)
