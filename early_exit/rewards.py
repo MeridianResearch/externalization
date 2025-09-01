@@ -72,7 +72,7 @@ def compute_verification_rewards(completions_tokens, completions_text, correct_a
         elif extracted_answer is None:
             rewards[i] = -1.0  #extra penalty for wrong format and no answer
         else:
-            rewards[i] = 0.0 #wrong answer but correct format
+            rewards[i] = 0.0 - format_penalty #wrong answer but correct format
     
     return rewards
 
