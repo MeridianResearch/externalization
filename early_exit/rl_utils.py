@@ -376,8 +376,7 @@ def compute_accuracy_by_difficulty(verify_rewards, difficulty_categories):
     difficulty_stats = {
         'Easy': {'correct': 0, 'good_format': 0, 'total': 0},
         'Medium': {'correct': 0, 'good_format': 0, 'total': 0},
-        'Hard': {'correct': 0, 'good_format': 0, 'total': 0},
-        'Unknown': {'correct': 0, 'good_format': 0, 'total': 0}
+        'Hard': {'correct': 0, 'good_format': 0, 'total': 0}
     }
     
     for label, difficulty in zip(labels, difficulty_categories):
@@ -390,7 +389,7 @@ def compute_accuracy_by_difficulty(verify_rewards, difficulty_categories):
             difficulty_stats[difficulty]['good_format'] += 1
     
     results = {}
-    for difficulty in ['Easy', 'Medium', 'Hard', 'Unknown']:
+    for difficulty in ['Easy', 'Medium', 'Hard']:
         total = difficulty_stats[difficulty]['total']
         if total > 0:
             format_acc = difficulty_stats[difficulty]['good_format'] / total
