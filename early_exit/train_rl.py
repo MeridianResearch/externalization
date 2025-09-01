@@ -11,12 +11,70 @@ from datasets import load_dataset
 from typing import Optional
 
 from early_exit.util import get_model, load_model_from_wandb, load_model
-from early_exit.rl_utils import apply_masking, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length
+from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from torch.nn.utils.rnn import pad_sequence
+
+def compute_sample_labels(verification_rewards, completions_texts):
+    """
+    Compute correctness and format labels for samples, similar to format_accuracy/answer_accuracy in reference.
+
+    Args:
+        verification_rewards: Tensor of reward values (1.0, 0.5, 0.0, -1.0)
+        completions_texts: List of completion text strings
+
+    Returns:
+        dict with label counts and ratios
+    """
+    labels = []
+    for i, reward in enumerate(verification_rewards):
+        reward_val = reward.item()
+
+        # Determine correctness label based on reward value
+        if reward_val == 1.0:
+            correctness_label = 'correct'
+        elif reward_val == 0.5:
+            correctness_label = 'partial'
+        elif reward_val == 0.0:
+            correctness_label = 'incorrect'
+        elif reward_val == -1.0:
+            correctness_label = 'format_error'
+        else:
+            correctness_label = 'unknown'
+
+        # Determine format quality based on presence of ####
+        completion_text = completions_texts[i]
+        has_format_marker = '####' in completion_text
+        format_label = 'good_format' if has_format_marker else 'poor_format'
+
+        labels.append({
+            'correctness': correctness_label,
+            'format_quality': format_label
+        })
+
+    # Compute statistics
+    total_samples = len(labels)
+    correct_count = sum(1 for l in labels if l['correctness'] == 'correct')
+    partial_count = sum(1 for l in labels if l['correctness'] == 'partial')
+    incorrect_count = sum(1 for l in labels if l['correctness'] == 'incorrect')
+    format_error_count = sum(1 for l in labels if l['correctness'] == 'format_error')
+    good_format_count = sum(1 for l in labels if l['format_quality'] == 'good_format')
+
+    return {
+        'labels': labels,
+        'stats': {
+            'correct_rate': correct_count / total_samples,
+            'partial_rate': partial_count / total_samples,
+            'incorrect_rate': incorrect_count / total_samples,
+            'format_error_rate': format_error_count / total_samples,
+            'good_format_rate': good_format_count / total_samples,
+            'answer_accuracy': (correct_count + partial_count) / total_samples,  # Similar to reference
+            'format_accuracy': good_format_count / total_samples  # Similar to reference
+        }
+    }
 
 device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
@@ -33,8 +91,8 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
 # TODO: Change artifact path to sft trained gsm-8k model
-# student = load_model_from_wandb(student, model_path = "models/trained_model_v0", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
-student = load_model(student, sft_model_path)
+student = load_model_from_wandb(student, model_path = "models/trained_model_v0", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
+#student = load_model(student, sft_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
@@ -101,6 +159,17 @@ def main_rl_training():
                 'samples/gen_len': 'Number of generated tokens excluding the prompt tokens.',
                 'samples/contains_eos': 'Whether the sample generation contained an EOS token.',
                 'samples/selection_index': 'Row index within the K completions for the prompt.',
+                # Accuracy metrics (similar to reference implementation)
+                'accuracy/correct_rate': 'Fraction of samples with perfect correctness (reward = 1.0).',
+                'accuracy/partial_rate': 'Fraction of samples with partial correctness (reward = 0.5).',
+                'accuracy/incorrect_rate': 'Fraction of samples with incorrect answers (reward = 0.0).',
+                'accuracy/format_error_rate': 'Fraction of samples with format errors (reward = -1.0).',
+                'accuracy/good_format_rate': 'Fraction of samples with proper "####" format.',
+                'accuracy/answer_accuracy': 'Fraction of samples with correct or partially correct answers (similar to answer_accuracy in reference).',
+                'accuracy/format_accuracy': 'Fraction of samples with proper format (similar to format_accuracy in reference).',
+                # Sample table labels
+                'samples/correctness_label': 'Correctness category: correct (1.0), partial (0.5), incorrect (0.0), format_error (-1.0).',
+                'samples/format_label': 'Format quality: good_format (contains ####), poor_format (missing ####).',
             }
         )
     )
@@ -115,7 +184,7 @@ def main_rl_training():
 
     # Define metric step and categories for clean grouping in W&B UI
     wandb.define_metric('training/episode')
-    for pattern in ['objective/*', 'rewards/*', 'exit/*', 'loss/*', 'completions/*', 'training/*', 'samples/*', 'neg_logprobs/*']:
+    for pattern in ['objective/*', 'rewards/*', 'exit/*', 'loss/*', 'completions/*', 'training/*', 'samples/*', 'accuracy/*']:
         wandb.define_metric(pattern, step_metric='training/episode')
 
     # TODO: batching. For simplicity, treat batch_size = 1 here.
@@ -142,16 +211,12 @@ def main_rl_training():
                                                         input_prompt_length)  # TODO
         
         prescribed_exit_layers = pad_sequence(exit_info['prescribed_exit_layers'], batch_first=True, padding_value=torch.inf)
-        stu_logprobs, student_early_exit_logprobs = compute_token_logprobs_student(student, 
+        stu_logprobs, student_early_exit_probs = compute_token_logprobs_student(student, 
                                                       completions['tokens'], 
                                                       prescribed_exit_layers=prescribed_exit_layers,
                                                       input_prompt_length=input_prompt_length)  # TODO
         
-        stu_logprobs = apply_masking(stu_logprobs, completions['tokens'], input_prompt_length, tokenizer.pad_token_id)
-        student_early_exit_logprobs = apply_masking(student_early_exit_logprobs, completions['tokens'], input_prompt_length, 
-                                                 tokenizer.pad_token_id, mode = 'early_exit_probs')
-        ref_logprobs = apply_masking(ref_logprobs, completions['tokens'], input_prompt_length, tokenizer.pad_token_id)
-        
+        # import ipdb; ipdb.set_trace()
         # Runtime validation of rollout tensors (dtype/shape checks)
         _ = RolloutBatch(
             tokens=completions['tokens'],
@@ -161,7 +226,7 @@ def main_rl_training():
             # prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None),
             prescribed_exit_layers=prescribed_exit_layers,
             input_prompt_length=input_prompt_length,
-            student_early_exit_logprobs=student_early_exit_logprobs
+            student_early_exit_probs=student_early_exit_probs
             #avg_exit_layer=exit_info.get('avg_exit_layer', None), #calced in rewards later
         )
 
@@ -170,6 +235,9 @@ def main_rl_training():
         verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
         kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs)  # TODO
         avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
+
+        # 3.1) Compute sample labels (similar to format_accuracy/answer_accuracy in reference)
+        sample_labels = compute_sample_labels(verify, completions['texts'])
         # import ipdb; ipdb.set_trace()
         # 4) Total reward per sequence (simple linear combination)
         reward = verify.to(device) - RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)  # TODO: tune weights, consider normalization
@@ -183,8 +251,8 @@ def main_rl_training():
         
         # 6) Weighted SFT update
         sampled_early_exit_layer_idxs_early = map_layers_to_indices(prescribed_exit_layers, student.exitable_layer_idxs).to(device)
-        student_sampled_exit_logprobs = student_early_exit_logprobs.gather(
-            index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).squeeze(-1)
+        student_sampled_exit_logprobs = (student_early_exit_probs + 1e-16).gather(
+            index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).log().squeeze(-1)
         
         # import ipdb; ipdb.set_trace()
         loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, normalized_advantages, optimizer, RL_HPARAMS)  # TODO
@@ -235,6 +303,15 @@ def main_rl_training():
                 'completions/max_length': seq_lens.max().item(),
                 'completions/clipped_ratio': clipped_ratio,
                 'completions/num_eos_tokens': num_eos_tokens,
+
+                # Accuracy metrics (similar to format_accuracy/answer_accuracy in reference)
+                'accuracy/correct_rate': sample_labels['stats']['correct_rate'],
+                'accuracy/partial_rate': sample_labels['stats']['partial_rate'],
+                'accuracy/incorrect_rate': sample_labels['stats']['incorrect_rate'],
+                'accuracy/format_error_rate': sample_labels['stats']['format_error_rate'],
+                'accuracy/good_format_rate': sample_labels['stats']['good_format_rate'],
+                'accuracy/answer_accuracy': sample_labels['stats']['answer_accuracy'],
+                'accuracy/format_accuracy': sample_labels['stats']['format_accuracy'],
             }
 
             # Periodic sample generations table
@@ -251,6 +328,8 @@ def main_rl_training():
                     'samples/gen_len',
                     'samples/contains_eos',
                     'samples/selection_index',
+                    'samples/correctness_label',
+                    'samples/format_label',
                 ]
                 for row_idx in range(num_rows):
                     full_len = int(seq_lens[row_idx].item())
@@ -265,7 +344,9 @@ def main_rl_training():
                         float(avg_exit_layer[row_idx].item()),
                         int(gen_len),
                         bool(contains_eos[row_idx].item()),
-                        int(row_idx)
+                        int(row_idx),
+                        sample_labels['labels'][row_idx]['correctness'],
+                        sample_labels['labels'][row_idx]['format_quality']
                     ])
                 table = wandb.Table(columns=columns)
                 for row in table_history:
