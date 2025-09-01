@@ -23,7 +23,7 @@ def compute_sample_labels(verification_rewards, completions_texts):
     Compute correctness and format labels for samples, similar to format_accuracy/answer_accuracy in reference.
 
     Args:
-        verification_rewards: Tensor of reward values (1.0, 0.5, 0.0, -1.0)
+        verification_rewards: Tensor of reward values [-1.0, 1.0]
         completions_texts: List of completion text strings
 
     Returns:
@@ -35,20 +35,20 @@ def compute_sample_labels(verification_rewards, completions_texts):
 
         # Determine correctness label based on reward value
         if reward_val == 1.0:
-            correctness_label = 'correct'
-        elif reward_val == 0.5:
-            correctness_label = 'partial'
+            correctness_label = 'correct_format'
+        elif reward_val >= 0.5:
+            correctness_label = 'correct_noformat'
         elif reward_val == 0.0:
-            correctness_label = 'incorrect'
-        elif reward_val == -1.0:
-            correctness_label = 'format_error'
+            correctness_label = 'incorrect_format'
+        elif reward_val >= -1.0:
+            correctness_label = 'incorrect_noformat'
         else:
             correctness_label = 'unknown'
 
         # Determine format quality based on presence of ####
-        completion_text = completions_texts[i]
-        has_format_marker = '####' in completion_text
-        format_label = 'good_format' if has_format_marker else 'poor_format'
+        #completion_text = completions_texts[i]
+        #has_format_marker = '####' in completion_text
+        format_label = 'good_format' if correctness_label in ['correct_format', 'incorrect_format'] else 'poor_format'
 
         labels.append({
             'correctness': correctness_label,
@@ -57,21 +57,21 @@ def compute_sample_labels(verification_rewards, completions_texts):
 
     # Compute statistics
     total_samples = len(labels)
-    correct_count = sum(1 for l in labels if l['correctness'] == 'correct')
-    partial_count = sum(1 for l in labels if l['correctness'] == 'partial')
-    incorrect_count = sum(1 for l in labels if l['correctness'] == 'incorrect')
-    format_error_count = sum(1 for l in labels if l['correctness'] == 'format_error')
+    correct_count = sum(1 for l in labels if l['correctness'] == 'correct_format')
+    #partial_count = sum(1 for l in labels if l['correctness'] == 'partial')
+    #incorrect_count = sum(1 for l in labels if l['correctness'] == 'incorrect')
+    #format_error_count = sum(1 for l in labels if l['correctness'] == 'format_error')
     good_format_count = sum(1 for l in labels if l['format_quality'] == 'good_format')
 
     return {
         'labels': labels,
         'stats': {
-            'correct_rate': correct_count / total_samples,
-            'partial_rate': partial_count / total_samples,
-            'incorrect_rate': incorrect_count / total_samples,
-            'format_error_rate': format_error_count / total_samples,
-            'good_format_rate': good_format_count / total_samples,
-            'answer_accuracy': (correct_count + partial_count) / total_samples,  # Similar to reference
+            'answer_accuracy': correct_count / total_samples,
+            #'partial_rate': partial_count / total_samples,
+            #'incorrect_rate': incorrect_count / total_samples,
+            #'format_error_rate': format_error_count / total_samples,
+            #'good_format_rate': good_format_count / total_samples,
+            #'answer_accuracy': (correct_count + partial_count) / total_samples,  # Similar to reference
             'format_accuracy': good_format_count / total_samples  # Similar to reference
         }
     }
@@ -160,16 +160,16 @@ def main_rl_training():
                 'samples/contains_eos': 'Whether the sample generation contained an EOS token.',
                 'samples/selection_index': 'Row index within the K completions for the prompt.',
                 # Accuracy metrics (similar to reference implementation)
-                'accuracy/correct_rate': 'Fraction of samples with perfect correctness (reward = 1.0).',
-                'accuracy/partial_rate': 'Fraction of samples with partial correctness (reward = 0.5).',
-                'accuracy/incorrect_rate': 'Fraction of samples with incorrect answers (reward = 0.0).',
-                'accuracy/format_error_rate': 'Fraction of samples with format errors (reward = -1.0).',
-                'accuracy/good_format_rate': 'Fraction of samples with proper "####" format.',
-                'accuracy/answer_accuracy': 'Fraction of samples with correct or partially correct answers (similar to answer_accuracy in reference).',
+                #'accuracy/correct_rate': 'Fraction of samples with perfect correctness (reward = 1.0).',
+                #'accuracy/partial_rate': 'Fraction of samples with partial correctness (reward = 0.5).',
+                #'accuracy/incorrect_rate': 'Fraction of samples with incorrect answers (reward = 0.0).',
+                #'accuracy/format_error_rate': 'Fraction of samples with format errors (reward = -1.0).',
+                #'accuracy/good_format_rate': 'Fraction of samples with proper "####" format.',
+                'accuracy/answer_accuracy': 'Fraction of samples with correct and properly formatted answers (similar to answer_accuracy in reference).',
                 'accuracy/format_accuracy': 'Fraction of samples with proper format (similar to format_accuracy in reference).',
                 # Sample table labels
-                'samples/correctness_label': 'Correctness category: correct (1.0), partial (0.5), incorrect (0.0), format_error (-1.0).',
-                'samples/format_label': 'Format quality: good_format (contains ####), poor_format (missing ####).',
+                'samples/correctness_label': 'Correctness category: correct (1.0), partial (>=0.5), incorrect (0.0), format_error (>=-1.0).',
+                'samples/format_label': 'Format quality: good_format (contains 1 #### with integer after and nothing else)',
             }
         )
     )
@@ -305,11 +305,11 @@ def main_rl_training():
                 'completions/num_eos_tokens': num_eos_tokens,
 
                 # Accuracy metrics (similar to format_accuracy/answer_accuracy in reference)
-                'accuracy/correct_rate': sample_labels['stats']['correct_rate'],
-                'accuracy/partial_rate': sample_labels['stats']['partial_rate'],
-                'accuracy/incorrect_rate': sample_labels['stats']['incorrect_rate'],
-                'accuracy/format_error_rate': sample_labels['stats']['format_error_rate'],
-                'accuracy/good_format_rate': sample_labels['stats']['good_format_rate'],
+                #'accuracy/correct_rate': sample_labels['stats']['correct_rate'],
+                #'accuracy/partial_rate': sample_labels['stats']['partial_rate'],
+                #'accuracy/incorrect_rate': sample_labels['stats']['incorrect_rate'],
+                #'accuracy/format_error_rate': sample_labels['stats']['format_error_rate'],
+                #'accuracy/good_format_rate': sample_labels['stats']['good_format_rate'],
                 'accuracy/answer_accuracy': sample_labels['stats']['answer_accuracy'],
                 'accuracy/format_accuracy': sample_labels['stats']['format_accuracy'],
             }
