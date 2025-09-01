@@ -9,72 +9,16 @@ from torch.optim import Adam
 import wandb
 from datasets import load_dataset
 from typing import Optional
+import asyncio
 
 from early_exit.util import get_model, load_model_from_wandb, load_model
-from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length
+from early_exit.rl_utils import generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from torch.nn.utils.rnn import pad_sequence
 
-def compute_sample_labels(verification_rewards, completions_texts):
-    """
-    Compute correctness and format labels for samples, similar to format_accuracy/answer_accuracy in reference.
-
-    Args:
-        verification_rewards: Tensor of reward values [-1.0, 1.0]
-        completions_texts: List of completion text strings
-
-    Returns:
-        dict with label counts and ratios
-    """
-    labels = []
-    for i, reward in enumerate(verification_rewards):
-        reward_val = reward.item()
-
-        # Determine correctness label based on reward value
-        if reward_val == 1.0:
-            correctness_label = 'correct_format'
-        elif reward_val >= 0.5:
-            correctness_label = 'correct_noformat'
-        elif reward_val == 0.0:
-            correctness_label = 'incorrect_format'
-        elif reward_val >= -1.0:
-            correctness_label = 'incorrect_noformat'
-        else:
-            correctness_label = 'unknown'
-
-        # Determine format quality based on presence of ####
-        #completion_text = completions_texts[i]
-        #has_format_marker = '####' in completion_text
-        format_label = 'good_format' if correctness_label in ['correct_format', 'incorrect_format'] else 'poor_format'
-
-        labels.append({
-            'correctness': correctness_label,
-            'format_quality': format_label
-        })
-
-    # Compute statistics
-    total_samples = len(labels)
-    correct_count = sum(1 for l in labels if l['correctness'] == 'correct_format')
-    #partial_count = sum(1 for l in labels if l['correctness'] == 'partial')
-    #incorrect_count = sum(1 for l in labels if l['correctness'] == 'incorrect')
-    #format_error_count = sum(1 for l in labels if l['correctness'] == 'format_error')
-    good_format_count = sum(1 for l in labels if l['format_quality'] == 'good_format')
-
-    return {
-        'labels': labels,
-        'stats': {
-            'answer_accuracy': correct_count / total_samples,
-            #'partial_rate': partial_count / total_samples,
-            #'incorrect_rate': incorrect_count / total_samples,
-            #'format_error_rate': format_error_count / total_samples,
-            #'good_format_rate': good_format_count / total_samples,
-            #'answer_accuracy': (correct_count + partial_count) / total_samples,  # Similar to reference
-            'format_accuracy': good_format_count / total_samples  # Similar to reference
-        }
-    }
 
 device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
@@ -237,7 +181,7 @@ def main_rl_training():
         avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
 
         # 3.1) Compute sample labels (similar to format_accuracy/answer_accuracy in reference)
-        sample_labels = compute_sample_labels(verify, completions['texts'])
+        sample_labels = compute_sample_labels(verify)
         # import ipdb; ipdb.set_trace()
         # 4) Total reward per sequence (simple linear combination)
         reward = verify.to(device) - RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)  # TODO: tune weights, consider normalization
@@ -317,6 +261,33 @@ def main_rl_training():
             # Periodic sample generations table
             if (i % RL_HPARAMS.sample_log_interval) == 0:
                 num_rows = min(len(completions['texts']), RL_HPARAMS.sample_max_rows)
+
+                async def evaluate_batch_coherence():
+                    tasks = []
+                    for row_idx in range(num_rows):
+                        exit_rate = float(avg_exit_layer[row_idx].item())
+                        task = evaluate_coherence(prompt, completions['texts'][row_idx], exit_rate)
+                        tasks.append(task)
+                    
+                    results = await asyncio.gather(*tasks)
+                    return results
+                
+                coherence_batch_results = asyncio.run(evaluate_batch_coherence())
+
+                avg_coherence = sum(r['coherence'] for r in coherence_batch_results) / len(coherence_batch_results)
+                avg_completeness = sum(r['completeness'] for r in coherence_batch_results) / len(coherence_batch_results)
+                avg_clarity = sum(r['clarity'] for r in coherence_batch_results) / len(coherence_batch_results)
+                avg_no_repetition = sum(r['no_repetition'] for r in coherence_batch_results) / len(coherence_batch_results)
+                avg_overall = sum(r['average'] for r in coherence_batch_results) / len(coherence_batch_results)
+    
+                log_dict.update({
+                    'coherence/batch_coherence': avg_coherence,
+                    'coherence/batch_completeness': avg_completeness,
+                    'coherence/batch_clarity': avg_clarity,
+                    'coherence/batch_no_repetition': avg_no_repetition,
+                    'coherence/batch_average': avg_overall,
+                })
+
                 columns = [
                     'episode',
                     'samples/prompt_text',
@@ -330,10 +301,19 @@ def main_rl_training():
                     'samples/selection_index',
                     'samples/correctness_label',
                     'samples/format_label',
+                    'samples/coherence_coherence',
+                    'samples/coherence_completeness',
+                    'samples/coherence_clarity',
+                    'samples/coherence_no_repetition',
+                    'samples/coherence_average',
+                    'samples/coherence_explanation',
                 ]
                 for row_idx in range(num_rows):
                     full_len = int(seq_lens[row_idx].item())
                     gen_len = max(0, full_len - int(input_prompt_length))
+
+                    coherence_result = coherence_batch_results[row_idx]
+
                     table_history.append([
                         i,
                         prompt,
@@ -346,8 +326,15 @@ def main_rl_training():
                         bool(contains_eos[row_idx].item()),
                         int(row_idx),
                         sample_labels['labels'][row_idx]['correctness'],
-                        sample_labels['labels'][row_idx]['format_quality']
+                        sample_labels['labels'][row_idx]['format_quality'],
+                        int(coherence_result['coherence']),
+                        int(coherence_result['completeness']),
+                        int(coherence_result['clarity']),
+                        int(coherence_result['no_repetition']),
+                        float(coherence_result['average']),
+                        coherence_result['explanation']
                     ])
+                    
                 table = wandb.Table(columns=columns)
                 for row in table_history:
                     table.add_data(*row)

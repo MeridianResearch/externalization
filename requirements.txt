@@ -4,3 +4,5 @@ pandas
 bitsandbytes
 wandb
 datasets
+inspect_ai
+openai
