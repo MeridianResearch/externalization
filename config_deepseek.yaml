@@ -13,8 +13,11 @@ lora:
 
 generation:
   min_length: 0
-  max_new_tokens: 400
-  do_sample: false
+  max_new_tokens: 500
+  # max_new_tokens: 400
+  do_sample: true
+  temperature: 0.7
+  # do_sample: false
   # top_k: 0.0
   # top_p: 1.0
   # num_beams: 1
