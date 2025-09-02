@@ -23,7 +23,7 @@ print(f"Model loaded w exitable layers: {model.exitable_layer_idxs}")
 
 set_transformer_early_exit_mode(model, 'free_generate')
 
-prompt = "What is 17 x 19"
+prompt = "What is 17 x 19?"
 system_prompt = "You are a helpful math tutor."
 prefiller = ""
 

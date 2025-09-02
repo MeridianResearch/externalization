@@ -13,12 +13,16 @@ MODEL_PATH = "models/trained_model_v0"
 BASE_MODEL = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 CONFIG_PATH = "config_deepseek.yaml"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-WANDB_ARTIFACT = "vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0"
-
+# WANDB_ARTIFACT = "vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0"
+WANDB_ARTIFACT = 'elizabeth-pavlova-university-of-texas-at-austin/gsm8k-finetuning/early-exit-model-373uecef:v0'
 # ---- Load once at startup (on GPU) ----
 tokenizer = get_tokenizer(BASE_MODEL)
 config = configs_from_yaml(CONFIG_PATH, tokenizer.eos_token_id)
-
+if WANDB_ARTIFACT.startswith("elizabeth-pavlova"):
+    config['lora']['r'] = 16
+    config['lora']['lora_alpha'] = 32
+    MODEL_PATH = "models/gsm_8k_model"
+    
 base_model = get_model(BASE_MODEL, config["model"], DEVICE)
 model = replace_attention_layers(base_model, config["lora"], DEVICE)
 model = load_model_from_wandb(
@@ -86,7 +90,7 @@ with gr.Blocks(title="Early-Exit LLM Demo") as demo:
                 max_new_tokens = gr.Slider(1, 1024, value=400, step=1, label="max_new_tokens")
                 temperature = gr.Slider(0.0, 2.0, value=1.0, step=0.05, label="temperature")
                 top_p = gr.Slider(0.0, 1.0, value=0.95, step=0.01, label="top_p")
-                do_sample = gr.Checkbox(value=True, label="do_sample")
+                do_sample = gr.Checkbox(value=False, label="do_sample")
 
                 mode = gr.Radio(
                     choices=["free_generate", "off"],
@@ -107,4 +111,6 @@ with gr.Blocks(title="Early-Exit LLM Demo") as demo:
     )
 
 # For remote servers, set server_name to "0.0.0.0" and choose a port.
-demo.queue(max_size=32).launch(server_name="0.0.0.0", server_port=7860, share=True)
+import random
+port = random.randint(1000, 9999)
+demo.queue(max_size=32).launch(server_name="0.0.0.0", server_port=port, share=True)

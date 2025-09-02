@@ -14,3 +14,6 @@ models/*
 results_and_data/early_exit_sft_dataset/test/merged_teacher_data_sparse.pkl.gz
 allocate_node.sh
 eval_logs/*
+run_rl_train.sh
+run_rl_train_single_prompt.sh
+*gradio*
