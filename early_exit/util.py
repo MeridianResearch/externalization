@@ -126,7 +126,7 @@ class ExitPrescription:
         Layer is frozen if prescribed_exit_layer_idxs (where the early exit happened during generation)
             is XXX: >= the current layer
         """
-        return self.prescribed_exit_layer_idxs >= current_layer_idx
+        return self.prescribed_exit_layer_idxs > current_layer_idx
 
 def get_model(model_name: str, model_config: dict, device: str):
     
