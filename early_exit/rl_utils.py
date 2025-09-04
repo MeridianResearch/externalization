@@ -53,9 +53,9 @@ def generate_k_completions(model, prompt, k: int, tokenizer, config, device, sys
             tokens = sequences[0]
             prescribed_exit_layers = exit_layer_idxs[0]
             
-            all_tokens.append(tokens)
+            all_tokens.append(tokens[:-1])
             all_texts.append(decoded_response)
-            all_prescribed_exit_layers.append(prescribed_exit_layers)
+            all_prescribed_exit_layers.append(prescribed_exit_layers[1:])
     
     max_seq_len = max(len(tokens) for tokens in all_tokens)
     padded_tokens = []
@@ -140,12 +140,16 @@ def weighted_sft_step(student_log_likelihoods, student_early_exit_logprobs, adva
 
 
 def get_input_prompt_length(tokenizer, prompt, system_prompt):
-    from shared_utils.generate import format_conversation, transform_conversations
-    pre_transformed_conversation = format_conversation(user_prompts=[prompt], system_prompt=system_prompt)
-    formatted_prompt = transform_conversations(pre_transformed_conversation, prefiller='')[0]
-    input_prompt_length = len(tokenizer(formatted_prompt)['input_ids'])
-    return input_prompt_length
-
+    from shared_utils.generate import format_conversation, transform_conversations, full_tokenize
+    
+    pre_transformed_conversation = format_conversation(user_prompts = [prompt], system_prompt=system_prompt)
+    tokens = tokenizer.apply_chat_template(pre_transformed_conversation, 
+                                           tokenize=True,
+                                           add_generation_prompt=True, # adds the <｜Assistant｜> token at the end,
+                                           return_tensors="pt"
+                                        )
+    
+    return tokens.shape[1]  # seq_len dimension
 
 def map_layers_to_indices(layer_tensor, exitable_layer_idxs):
     """Map layer indices to their positions in exitable_layer_idxs array."""
