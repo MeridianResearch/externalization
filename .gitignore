@@ -17,3 +17,5 @@ eval_logs/*
 run_rl_train.sh
 run_rl_train_single_prompt.sh
 *gradio*
+logs/*
+sweep_train_rl_single_prompt.sh

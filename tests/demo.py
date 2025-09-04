@@ -13,16 +13,12 @@ MODEL_PATH = "models/trained_model_v0"
 BASE_MODEL = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 CONFIG_PATH = "config_deepseek.yaml"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-# WANDB_ARTIFACT = "vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0"
-WANDB_ARTIFACT = 'elizabeth-pavlova-university-of-texas-at-austin/gsm8k-finetuning/early-exit-model-373uecef:v0'
+WANDB_ARTIFACT = "vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0"
+
 # ---- Load once at startup (on GPU) ----
 tokenizer = get_tokenizer(BASE_MODEL)
 config = configs_from_yaml(CONFIG_PATH, tokenizer.eos_token_id)
-if WANDB_ARTIFACT.startswith("elizabeth-pavlova"):
-    config['lora']['r'] = 16
-    config['lora']['lora_alpha'] = 32
-    MODEL_PATH = "models/gsm_8k_model"
-    
+
 base_model = get_model(BASE_MODEL, config["model"], DEVICE)
 model = replace_attention_layers(base_model, config["lora"], DEVICE)
 model = load_model_from_wandb(

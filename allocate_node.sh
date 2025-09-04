@@ -3,7 +3,7 @@
 # Default time is 1 hour if no argument is provided
 HOURS=${1:-1}
 
-srun --partition=dev-g \
+srun --partition=small-g \
      --nodes=1 \
      --gpus-per-node=1 \
      --time=$(printf "%02d:00:00" "$HOURS") \

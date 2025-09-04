@@ -4,7 +4,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from shared_utils.data import CSVPromptDataset
-from early_exit.util import get_model
+from early_exit.util import get_model, save_model
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from shared_utils.generate import generate_text
 
@@ -12,9 +12,12 @@ from early_exit.patching import replace_attention_layers, set_transformer_early_
 
 import wandb
 
+import os
+os.environ["WANDB_DATA_DIR"] = "/project/project_465001340/wandb/data"
+
 
 # LOAD IN EXPERIMENT ARGS
-num_epoch = 1                     # args.num_epoch
+num_epoch = 4                     # args.num_epoch
 num_exit_samples = 4                  # args.num_exit_samples
 device = "cuda"                    # args.device
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"                    # args.model_name
@@ -22,6 +25,7 @@ model_config_path = "config_deepseek.yaml"                     # args.model_conf
 dataset_path = "results_and_data/early_exit_sft_dataset/test/data.csv"                  # args.dataset_path
 prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config.json"                    # args.prompt_config_path
 batch_size = 1                    # args.batch_size -- might want to sort out batching, but increasing num_exit_samples might be better + less effort
+save_dir = "models/trained_model_v1"
 
 args = {
     'num_epoch': num_epoch,
@@ -55,6 +59,7 @@ optimiser = Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-5)
 
 run = wandb.init(
     # entity="cot-mrc",
+    entity="vkarthik095-university-of-amsterdam",
     project="early-exit",
     config=dict(
         **config,
@@ -177,3 +182,13 @@ for epoch in range(num_epoch):
             assert len(prompt_batch.idx) == 1, "Again, batch greater than 1 not allowed yet"
             wandb.log(log_dict)
 
+    print(f"\nEpoch {epoch+1} completed!")
+    
+    
+print(f"Saving final model to {save_dir}...")
+
+save_model(model, save_dir)
+
+
+
+wandb.finish()
