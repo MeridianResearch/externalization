@@ -18,13 +18,14 @@ Our approach adds early exit mechanisms to pre-trained language models, allowing
 
 ![Externalization Framework](externalisation_figure.svg)
 
-1. **Supervised Fine-Tuning (SFT)**: Train early exit weights alongside LoRA adapters using the model's own pre-modification reasoning traces
+1. **Supervised Fine-Tuning (SFT)**: Train early exit weights alongside LoRA adapters using the model's own pre-modification reasoning traces.
+
 **Teacher Mode**: The original model generates reasoning traces and identifies optimal exit points during forward passes.
 
 **Student Mode**: The modified model with early exit mechanisms learns to reproduce the teacher's reasoning while minimizing computational depth.
 
 
-2. **Reinforcement Learning (RL)** (WIP): Further optimize exit timing with explicit rewards for earlier exits, forcing externalization of reasoning
+2. **Reinforcement Learning ** [WIP]: Further optimize exit timing with explicit rewards for earlier exits, forcing externalization of reasoning
 
 ### Technical Implementation
 
@@ -48,14 +49,6 @@ externalization/
 └── results_and_data/   # Training datasets and experimental results
 ```
 
-## Getting Started
-
-### Prerequisites
-
-```bash
-pip install -r requirements.txt
-```
-
 ### Basic Usage
 
 **Train Early Exit Model**:
@@ -66,6 +59,8 @@ python early_exit/sft_train.py --config config_deepseek.yaml
 **Evaluate Results**:
 ```python
 python tests/evaluate_early_exit.py
+```
+
 
 Output quality is assessed using a multi-dimensional coherence scoring system that evaluates:
 
@@ -73,7 +68,7 @@ Output quality is assessed using a multi-dimensional coherence scoring system th
 - **Completeness of Reasoning (1-10)**: Whether the response reaches correct and explicit conclusions
 - **Clarity and Readability (1-10)**: How easy the reasoning is to follow
 - **Absence of Repetition/Errors (1-10)**: Penalizes contradictions and factual mistakes
-```
+
 
 ### Demo
 
