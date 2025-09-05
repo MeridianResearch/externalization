@@ -58,20 +58,27 @@ pip install -r requirements.txt
 
 ### Basic Usage
 
-1. **Generate Teacher Data**:
-```python
-# See teacher_data/generate_teacher_data.ipynb for data generation
-```
-
-2. **Train Early Exit Model**:
+**Train Early Exit Model**:
 ```python
 python early_exit/sft_train.py --config config_deepseek.yaml
 ```
 
-3. **Evaluate Results**:
+**Evaluate Results**:
 ```python
 python tests/evaluate_early_exit.py
+
+Output quality is assessed using a multi-dimensional coherence scoring system that evaluates:
+
+- **Coherence and Logical Flow (1-10)**: Whether reasoning follows a sensible progression
+- **Completeness of Reasoning (1-10)**: Whether the response reaches correct and explicit conclusions
+- **Clarity and Readability (1-10)**: How easy the reasoning is to follow
+- **Absence of Repetition/Errors (1-10)**: Penalizes contradictions and factual mistakes
 ```
+
+### Demo
+
+View interactive examples and visualizations: [Early Exit Demo](https://htmlpreview.github.io/?https://raw.githubusercontent.com/MeridianResearch/externalization/visualization/early_exit_teacher/visualizations/demo.html)
+
 
 ---
 
