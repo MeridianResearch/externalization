@@ -1,9 +1,11 @@
 import os
 import gzip
 import pickle
-from huggingface_hub import hf_hub_download, list_repo_files
+from huggingface_hub import hf_hub_download, list_repo_files, upload_file
+from datasets import load_dataset
+import tempfile
 
-def download_and_filter_chunks(repo_id, local_dir="downloaded_teacher_data", filter_correct_only=True):
+def download_chunks_from_hf(repo_id, local_dir="downloaded_teacher_data"):
 
     os.makedirs(local_dir, exist_ok=True)
     
@@ -23,18 +25,21 @@ def download_and_filter_chunks(repo_id, local_dir="downloaded_teacher_data", fil
                 local_dir=local_dir,
                 local_dir_use_symlinks=False
             )
+        
+        return chunk_files, metadata_files
             
     except Exception as e:
-        return False
+        print(f"Error downloading files: {e}")
+        return [], []
+
+def create_merged_file(local_dir, output_filename, filter_correct_only=False):
+
+    output_path = os.path.join(local_dir, output_filename)
     
-    # Create filtered merged file
-    filtered_output = os.path.join(local_dir, "teacher_gsm8k_sparse.pkl.gz")
-    
-    print(f"Creating filtered merged file...")
     total_samples = 0
-    correct_samples = 0
+    kept_samples = 0
     
-    with gzip.open(filtered_output, 'wb', compresslevel=9) as fout:
+    with gzip.open(output_path, 'wb', compresslevel=9) as fout:
         # Write metadata header
         metadata_path = os.path.join(local_dir, "metadata.pkl.gz")
         if os.path.exists(metadata_path):
@@ -60,75 +65,213 @@ def download_and_filter_chunks(repo_id, local_dir="downloaded_teacher_data", fil
                         sample = pickle.load(fin)
                         total_samples += 1
                         
-                        # Filter for correct answers only if requested
+                        # Apply filter if requested
                         if filter_correct_only:
                             if sample.get('answer_correct') == 'yes':
                                 pickle.dump(sample, fout, protocol=5)
-                                correct_samples += 1
+                                kept_samples += 1
                         else:
                             pickle.dump(sample, fout, protocol=5)
-                            correct_samples += 1
+                            kept_samples += 1
                         
                         if total_samples % 100 == 0:
-                            print(f"  Processed {total_samples} samples, kept {correct_samples}")
+                            print(f"  Processed {total_samples} samples, kept {kept_samples}")
                             
                 except Exception as e:
                     print(f"Error processing {chunk_file}: {e}")
                     continue
         
-        # Write end marker
-        pickle.dump({'_end': True, 'num_samples': correct_samples}, fout, protocol=5)
+        pickle.dump({'_end': True, 'num_samples': kept_samples}, fout, protocol=5)
     
-    print(f"\nFiltering complete:")
     print(f"Total samples processed: {total_samples}")
-    print(f"Correct samples kept: {correct_samples}")
-    print(f"Filtered file saved to: {filtered_output}")
+    print(f"Samples kept: {kept_samples}")
+    print(f"File saved to: {output_path}")
     
-    # Clean up individual chunk files to save space
-    print("Cleaning up individual chunk files...")
+    return output_path, kept_samples
+
+def extract_question_from_prompt(full_user_prompt):
+    """
+    Extract just the question from full_user_prompt that contains system prompt
+    """
+    if isinstance(full_user_prompt, list):
+        prompt_text = full_user_prompt[0]
+    else:
+        prompt_text = full_user_prompt
+    
+    if "<｜User｜>" in prompt_text:
+        #split and get part after <｜User｜>
+        user_part = prompt_text.split("<｜User｜>", 1)[1]
+        #remove <｜Assistant｜> part if exists
+        if "<｜Assistant｜>" in user_part:
+            question = user_part.split("<｜Assistant｜>", 1)[0].strip()
+        else:
+            question = user_part.strip()
+        return question
+    else:
+        #return the full prompt if format is unexpected
+        return prompt_text
+
+def get_chunk_questions(local_dir):
+    """
+    Extract all questions from chunks to compare with GSM8K
+    """
+    gsm8k = load_dataset("gsm8k", "main")
+    gsm8k_questions = set(sample['question'] for sample in gsm8k['train'])
+    
+    questions = set()
+    not_found_questions = []
+    
+    chunk_files_local = sorted([f for f in os.listdir(local_dir) if f.startswith("chunk_") and f.endswith(".pkl.gz")])
+    
     for chunk_file in chunk_files_local:
-        os.remove(os.path.join(local_dir, chunk_file))
-    
-    return filtered_output
-
-def iter_merged_teacher_data(merged_path: str):
-    """
-    Lazily iterate samples from the merged stream (same as your training script)
-    """
-    with gzip.open(merged_path, "rb") as f:
-        header = pickle.load(f)  # {'metadata': ...}
-        while True:
+        chunk_path = os.path.join(local_dir, chunk_file)
+        
+        with gzip.open(chunk_path, "rb") as fin:
             try:
-                obj = pickle.load(f)
-            except EOFError:
-                break
-            if isinstance(obj, dict) and obj.get('_end'):
-                break
-            yield obj
-
-if __name__ == "__main__":
-    repo_id = "lizardp1/gsm8k-qwen-early-exit"
+                chunk_header = pickle.load(fin)
+                samples_in_chunk = chunk_header['num_samples']
+                
+                for i in range(samples_in_chunk):
+                    sample = pickle.load(fin)
+                    question = extract_question_from_prompt(sample['full_user_prompt'])
+                    questions.add(question)
+                    
+                    # Validate that this question exists in GSM8K
+                    if question not in gsm8k_questions:
+                        not_found_questions.append({
+                            'question': question[:200] + "..." if len(question) > 200 else question,
+                            'chunk_file': chunk_file,
+                            'sample_index': i
+                        })
+                    
+                    if len(questions) <= 3:  # Debug first few
+                        print(f"Debug - extracted question: {question[:100]}...")
+                        print(f"  Found in GSM8K: {question in gsm8k_questions}")
+                    
+            except Exception as e:
+                print(f"Error processing {chunk_file}: {e}")
+                continue
     
-    filtered_file = download_and_filter_chunks(
-        repo_id=repo_id,
-        local_dir="downloaded_teacher_data", 
+    print(f"Found {len(questions)} unique questions in chunks")
+    print(f"Questions matching GSM8K: {len(questions) - len(not_found_questions)}")
+    print(f"Questions NOT found in GSM8K: {len(not_found_questions)}")
+    
+    if not_found_questions:
+        print(f"\nWARNING: {len(not_found_questions)} questions from chunks not found in GSM8K!")
+        print("First few examples:")
+        for i, nfq in enumerate(not_found_questions[:5]):
+            print(f"  {i+1}. {nfq['question']} (from {nfq['chunk_file']})")
+        
+        if len(not_found_questions) > 5:
+            print(f"  ... and {len(not_found_questions) - 5} more")
+        
+    else:
+        print("All extracted questions found in GSM8K training set")
+    
+    return questions
+
+def create_filtered_gsm8k(chunk_questions, output_filename="gsm8k_filtered.pkl.gz"):
+
+    gsm8k = load_dataset("gsm8k", "main")
+    train_data = gsm8k['train']
+    
+    print(f"Original GSM8K training set: {len(train_data)} samples")
+    
+    filtered_samples = []
+    excluded_count = 0
+    
+    for sample in train_data:
+        if sample['question'] not in chunk_questions:
+            filtered_samples.append(sample)
+        else:
+            excluded_count += 1
+    
+    print(f"Filtered GSM8K: {len(filtered_samples)} samples (excluded {excluded_count})")
+    
+    # Save filtered GSM8K
+    with gzip.open(output_filename, 'wb', compresslevel=9) as f:
+        pickle.dump({
+            'metadata': {
+                'original_size': len(train_data),
+                'filtered_size': len(filtered_samples),
+                'excluded_count': excluded_count,
+                'description': 'GSM8K training set with chunk questions removed'
+            }
+        }, f, protocol=5)
+        
+        for sample in filtered_samples:
+            pickle.dump(sample, f, protocol=5)
+        
+        pickle.dump({'_end': True, 'num_samples': len(filtered_samples)}, f, protocol=5)
+    
+    return output_filename, len(filtered_samples)
+
+def upload_to_hf(file_path, repo_id, filename):
+    """
+    Upload file to HuggingFace Hub
+    """
+    try:
+        print(f"Uploading {filename} to {repo_id}...")
+        upload_file(
+            path_or_fileobj=file_path,
+            path_in_repo=filename,
+            repo_id=repo_id,
+            repo_type="dataset"
+        )
+        print(f"Successfully uploaded {filename}")
+        return True
+    except Exception as e:
+        print(f"Error uploading {filename}: {e}")
+        return False
+
+def main():
+    repo_id = "lizardp1/gsm8k_early_exit"
+    local_dir = "download_teacher_data"
+    
+    chunk_files, metadata_files = download_chunks_from_hf(repo_id, local_dir)
+    
+    if not chunk_files:
+        print("No chunks downloaded, exiting")
+        return
+    
+    merged_all_path, total_samples = create_merged_file(
+        local_dir, 
+        "merged_all_samples.pkl.gz", 
+        filter_correct_only=False
+    )
+    
+    merged_correct_path, correct_samples = create_merged_file(
+        local_dir, 
+        "merged_correct_only.pkl.gz", 
         filter_correct_only=True
     )
     
-    if filtered_file:
-        print(f"\nTesting the filtered data...")
-        count = 0
-        for sample in iter_merged_teacher_data(filtered_file):
-            if count < 3:
-                print(f"Sample {count + 1}:")
-                print(f"  Question: {sample['full_user_prompt'][0][:100]}...")
-                print(f"  Answer correct: {sample['answer_correct']}")
-                print(f"  Difficulty: {sample.get('difficulty_category', 'Unknown')}")
-            count += 1
-            if count >= 100:  # Test first 100
-                break
-        print(f"Successfully loaded {count} filtered samples")
-        
-        # Update your training script to use this path:
-        print(f"\nUpdate your training script:")
-        print(f'teacher_data_path = "{filtered_file}"')
+    chunk_questions = get_chunk_questions(local_dir)
+    #gsm8k_filtered_path, gsm8k_remaining = create_filtered_gsm8k(chunk_questions, local_dir)
+    gsm8k_filtered_path, gsm8k_remaining = create_filtered_gsm8k(chunk_questions, os.path.join(local_dir, "gsm8k_filtered.pkl.gz"))
+    
+    
+    upload_results = []
+    
+    # Upload merged files
+    upload_results.append(upload_to_hf(merged_all_path, repo_id, "merged_all_samples.pkl.gz"))
+    upload_results.append(upload_to_hf(merged_correct_path, repo_id, "merged_correct_only.pkl.gz"))
+    
+    # Upload filtered GSM8K dataset
+    if gsm8k_filtered_path and os.path.exists(os.path.join(local_dir, "gsm8k_filtered.pkl.gz")):
+        upload_results.append(upload_to_hf(os.path.join(local_dir, "gsm8k_filtered.pkl.gz"), repo_id, "gsm8k_filtered.pkl.gz"))
+    else:
+        print("GSM8K filtered file not found, skipping upload")
+        upload_results.append(False)
+    
+    # Summary
+    print("\n=== Summary ===")
+    print(f"Total samples in chunks: {total_samples}")
+    print(f"Correct samples: {correct_samples}")
+    print(f"GSM8K samples remaining after filtering: {gsm8k_remaining}")
+    print(f"Upload success: {sum(upload_results)}/{len(upload_results)}")
+    
+    print(f"\nFiles uploaded to: https://huggingface.co/datasets/{repo_id}")
+
+if __name__ == "__main__":
+    main()
