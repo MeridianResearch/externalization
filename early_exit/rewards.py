@@ -2,7 +2,7 @@ import re
 import torch
 from torch import Tensor as _T
 
-def extract_solution(solution_str, method="strict"):
+'''def extract_solution(solution_str, method="strict"):
     assert method in ["strict", "flexible"]
     if method == "strict":
         solutions = re.findall("#### (\\-?[0-9\\.\\,]+)", solution_str) #looks for specific format #### <answer>
@@ -24,6 +24,39 @@ def extract_solution(solution_str, method="strict"):
                 if final_answer not in invalid_str:
                     break
     return final_answer
+    '''
+#above is old extract solution
+
+def extract_solution(solution_str, method="strict"):
+    assert method in ["strict", "flexible"]
+    if method == "strict":
+        #try \boxed{} format first (Qwen's preferred format)
+        solutions = re.findall(r"\\boxed\{([+-]?[0-9\\.\\,]+)\}", solution_str)
+            
+        #fallback for **Final Answer:** format
+        if len(solutions) == 0:
+            solutions = re.findall(r"\*\*Final Answer:\*\*[\\s\\n]*([+-]?[0-9\\.\\,]+)", solution_str)
+            
+        if len(solutions) == 0:
+            final_answer = None
+        else:
+            final_answer = solutions[-1].replace(",", "").replace("$", "")
+            
+    elif method == "flexible":
+        answer = re.findall(r"([+-]?[0-9\\.\\,]+)", solution_str) #looks for any number, with/wo commas
+        final_answer = None
+        if len(answer) == 0:
+            #no reward if no answer
+            pass
+        else:
+            invalid_str = ["", "."]
+            #find the last number that is not '.'
+            for final_answer in reversed(answer):
+                if final_answer not in invalid_str:
+                    final_answer = final_answer.replace(",", "").replace("$", "")
+                    break
+    
+    return final_answer
 
 def check_format_violations(completion_text):
     penalty = 0.0
@@ -44,6 +77,36 @@ def check_format_violations(completion_text):
     
     return penalty
 
+def compute_verification_rewards(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):
+    rewards = torch.zeros(len(completions_text), dtype=torch.float32)
+    
+    for i, full_completion_text in enumerate(completions_text):
+        completion_tokens = completions_tokens[i][input_prompt_length:] #remove prompt
+        completion_text = tokenizer.decode(completion_tokens, skip_special_tokens=True) #tokens to text
+        
+        ground_truth_idx = i // len(correct_answers) if len(correct_answers) > 1 else 0
+        ground_truth = str(correct_answers[ground_truth_idx])
+        
+        if "#### " in ground_truth:
+            answer_match = re.search(r"#### (.+)", ground_truth)
+            if answer_match:
+                ground_truth = answer_match.group(1).strip().replace(",", "").replace("$", "")
+        
+        extracted_answer = extract_solution(completion_text, method="strict")
+        extracted_answer_flexible = extract_solution(completion_text, method="flexible")
+        
+        if extracted_answer is not None and extracted_answer == ground_truth:
+            rewards[i] = 1.0  #full reward for correct answer in proper format
+        elif extracted_answer_flexible is not None and extracted_answer_flexible == ground_truth:
+            rewards[i] = 0.5  #partial reward for correct answer but wrong format
+        elif extracted_answer is None:
+            rewards[i] = -1.0  #penalty for no extractable answer
+        else:
+            rewards[i] = 0.0  #wrong answer
+    
+    return rewards
+
+'''
 def compute_verification_rewards(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):
 
     rewards = torch.zeros(len(completions_text), dtype=torch.float32)
@@ -75,6 +138,7 @@ def compute_verification_rewards(completions_tokens, completions_text, correct_a
             rewards[i] = 0.0 - format_penalty #wrong answer but correct format
     
     return rewards
+'''
 
 def compute_next_token_logprobs_from_logits(logits, tokens):
     """
