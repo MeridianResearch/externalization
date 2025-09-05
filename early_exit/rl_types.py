@@ -80,7 +80,8 @@ class RolloutBatch:
         if self.prescribed_exit_layers is not None:
             pel = self.prescribed_exit_layers
             assert isinstance(pel, torch.Tensor), "prescribed_exit_layers must be a torch.Tensor"
-            assert (pel[:, 0] == torch.inf).all(), "prescribed_exit_layers[:, 0] must be torch.inf to indicate no early exit on the first rollout token"
+            # Removing the inf assertion since we are removing the first element in the generate_rollouts_function
+            # assert (pel[:, 0] == torch.inf).all(), "prescribed_exit_layers[:, 0] must be torch.inf to indicate no early exit on the first rollout token"
             # TODO: Check if we need long dtype for this
             # assert pel.dtype == torch.long, f"prescribed_exit_layers must be dtype torch.long instead of {pel.dtype}"
             assert pel.dim() == 2 and tuple(pel.shape) == (batchK, self.generation_length),\

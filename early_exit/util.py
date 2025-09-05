@@ -224,3 +224,14 @@ def load_model_from_wandb(model, model_path, artifact_path):
     
     return model
 
+import json
+def configs_from_json(filepath):
+    try:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"File {filepath} not found")
+        return {}
+    except json.JSONDecodeError as e:
+        print(f"Invalid JSON in {filepath}: {e}")
+        return {}

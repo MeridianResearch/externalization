@@ -225,6 +225,7 @@ def main_rl_training():
         # import ipdb; ipdb.set_trace()
         loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, normalized_advantages, optimizer, RL_HPARAMS)  # TODO
         # 7) Logging (schema)
+        torch.cuda.empty_cache()
         with torch.no_grad():
             tokens_tensor = completions['tokens']  # [batch*K, seq_len]
             pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else -1
