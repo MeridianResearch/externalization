@@ -1,5 +1,7 @@
 import torch
 import os, certifi
+
+from tests.early_exit_teacher.early_exit_predictions import KLExitGenerator, format_and_tokenize_input, get_early_exit_indices, load_default_model_and_tokenizer
 os.environ["SSL_CERT_FILE"] = certifi.where()
 import gradio as gr
 
@@ -7,13 +9,15 @@ from shared_utils.load import get_tokenizer, configs_from_yaml
 from shared_utils.generate import generate_text
 from early_exit.util import get_model, load_model_from_wandb
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
+torch.set_grad_enabled(False)
+
 
 # ---- Config ----
-MODEL_PATH = "models/trained_model_v0"
+MODEL_PATH = "models/trained_model_v1"
 BASE_MODEL = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 CONFIG_PATH = "config_deepseek.yaml"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-WANDB_ARTIFACT = "vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0"
+WANDB_ARTIFACT = "vkarthik095-university-of-amsterdam/early-exit/early-exit-model-yb380w4v:v0"
 
 # ---- Load once at startup (on GPU) ----
 tokenizer = get_tokenizer(BASE_MODEL)
@@ -30,6 +34,15 @@ print(f"Model loaded w exitable layers: {getattr(model, 'exitable_layer_idxs', N
 # Warmup (optional, helps first-request latency)
 set_transformer_early_exit_mode(model, "free_generate")
 _ = torch.cuda.synchronize() if DEVICE.startswith("cuda") else None
+
+frozen_model, _ = load_default_model_and_tokenizer(model_config_path = "config_greedy.yaml")
+# Initialize the generator
+kl_generator = KLExitGenerator(
+    model=frozen_model,
+    tokenizer=tokenizer,
+    mode='frozen_residual',
+    exitable_layers=get_early_exit_indices(frozen_model)
+)
 
 def infer(
     user_prompt,
@@ -51,10 +64,24 @@ def infer(
     gen_cfg["top_p"] = float(top_p)
     gen_cfg["do_sample"] = bool(do_sample)
 
-    # Early-exit / generation mode
-    set_transformer_early_exit_mode(model, mode)
+    if mode == 'frozen_residual':
+        inputs = format_and_tokenize_input(
+                prompt=user_prompt, 
+                system_prompt=system_prompt,
+                prefiller=prefiller,
+                tokenizer=tokenizer, 
+                device=model.device
+            )
+        generated_tokens, chosen_layers, prediction = kl_generator.generate(
+                    inputs=inputs,
+                    kl_strength=1.0,
+                    max_new_tokens=max_new_tokens
+                )
+        response = tokenizer.decode(generated_tokens)
+    else:
+        # Early-exit / generation mode
+        set_transformer_early_exit_mode(model, mode)
 
-    with torch.no_grad():
         response, exit_info = generate_text(
             model=model,
             prompt=user_prompt,
@@ -74,7 +101,10 @@ with gr.Blocks(title="Early-Exit LLM Demo") as demo:
     gr.Markdown("# Early-Exit LLM Demo")
     with gr.Row():
         with gr.Column():
-            prompt = gr.Textbox(label="Prompt", placeholder="Ask me something…", lines=4)
+            prompt = gr.Textbox(label="Prompt", 
+                                # placeholder="Ask me something…", 
+                                value="Natalia sold clips to 48 of her friends in April, and then she sold half as many clips in May. How many clips did Natalia sell altogether in April and May?",
+                                lines=4)
             system_prompt = gr.Textbox(
                 label="System Prompt",
                 value="You are a helpful math tutor.",
@@ -89,8 +119,8 @@ with gr.Blocks(title="Early-Exit LLM Demo") as demo:
                 do_sample = gr.Checkbox(value=False, label="do_sample")
 
                 mode = gr.Radio(
-                    choices=["free_generate", "off"],
-                    value="free_generate",
+                    choices=["free_generate", "off", "frozen_residual"],
+                    value="frozen_residual",
                     label="Transformer early-exit mode"
                 )
 

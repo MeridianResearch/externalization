@@ -20,3 +20,6 @@ run_rl_train_single_prompt.sh
 logs/*
 sweep_train_rl_single_prompt.sh
 tests/*.csv
+config_greedy.yaml
+run_sft_train_gsm8k.sh
+magic_commands.txt

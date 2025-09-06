@@ -4,7 +4,7 @@ from tests.early_exit_teacher.visualization import safe_decode_tokens, visualize
 from early_exit.patching.method_patching import replace_attention_layers
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from early_exit.util import get_model, module_name_is_layer_base
-from shared_utils.generate import format_conversation, transform_conversations
+from shared_utils.generate import format_conversation, full_tokenize, transform_conversations
 from typing import Callable, Optional, List, Tuple
 from IPython.display import display
 import numpy as np
@@ -206,8 +206,13 @@ def load_default_model_and_tokenizer(model_config_path = "../../config_deepseek.
     
 def format_and_tokenize_input(prompt, system_prompt, prefiller, tokenizer, device):
     pre_transformed_conversation = format_conversation(user_prompts = [prompt], system_prompt=system_prompt)
-    formatted_prompt = transform_conversations(pre_transformed_conversation, prefiller)[0]
-    return tokenizer(formatted_prompt, return_tensors="pt").to(device)
+    full_prompts = tokenizer.apply_chat_template(pre_transformed_conversation, 
+                                                 prefiller=prefiller,
+                                                 tokenize=False,
+                                                 add_generation_prompt=True # adds the <｜Assistant｜> token at the end
+                                                 )
+    inputs = full_tokenize(prompts=full_prompts, tokenizer=tokenizer, device = device, add_special_tokens=False)
+    return inputs
 
 def get_early_exit_indices(model):
     early_exit_layer_idxs = []
@@ -535,14 +540,15 @@ class KLExitGenerator(EarlyExitGenerator):
             # Take the most likely next token (greedy decoding here)
             next_token = torch.argmax(student_logits[:, -1, :], dim=-1).unsqueeze(-1)
             student_prediction.update_after_prediction(next_token.item(), early_exit_layer)
-            teacher_prediction.update_after_prediction(next_token.item(), 27)  # Teacher always uses final layer
+            teacher_prediction.update_after_prediction(next_token.item(), early_exit_layer)  # Teacher always uses final layer
+            if next_token == self.tokenizer.eos_token_id: break
 
         generated_tokens = student_prediction.generated_tokens
         chosen_exit_layers = student_prediction.chosen_exit_layers
         assert len(chosen_exit_layers) == len(generated_tokens), \
             f"Mismatch: {len(chosen_exit_layers)} exit layers vs {len(generated_tokens)} tokens"
         
-        self.print_generation(generated_tokens, chosen_exit_layers, visualize_early_exit = visualize_early_exit)
+        # self.print_generation(generated_tokens, chosen_exit_layers, visualize_early_exit = visualize_early_exit)
         if self.mode == 'frozen_cache':
             self._verify_frozen_cache(student_prediction, inputs, chosen_exit_layers)
             
