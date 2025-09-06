@@ -1,7 +1,7 @@
 import torch
 from torch.optim import Adam
 
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 import pandas as pd
 
 from early_exit.patching import set_transformer_early_exit_mode
@@ -14,6 +14,7 @@ from shared_utils.generate import generate_text
 
 import asyncio
 from inspect_ai.model import get_model as get_inspect_model
+from huggingface_hub import hf_hub_download, upload_file
 
 # ---------------- RL helper functions moved from train_rl.py ----------------
 def generate_k_completions(model, prompt, k: int, tokenizer, config, device, system_prompt):
@@ -353,37 +354,31 @@ Brief explanation: [your reasoning]
         'explanation': explanation
     }
 
+
 def load_gsm8k_with_difficulty():
-    gsm8k_dataset = load_dataset("gsm8k", "main")
-    difficulty_dataset = load_dataset("lime-nlp/GSM8K_Difficulty", 'Difficulty Score')
-    difficulty_df = pd.DataFrame(difficulty_dataset['train'])
+
+    enriched_file = hf_hub_download(
+        repo_id="lizardp1/gsm8k_early_exit",
+        filename="rl_with_difficulty.parquet",
+        repo_type="dataset"
+    )
     
-    def categorize_difficulty(score):
-        if score > 90:
-            return "Easy"
-        elif score >= 70:
-            return "Medium"
-        else:
-            return "Hard"
+    dataset = Dataset.from_parquet(enriched_file)
+    gsm8k_dataset = {'train': dataset}
     
-    difficulty_df['difficulty_category'] = difficulty_df['solved_percentage'].apply(categorize_difficulty)
-    difficulty_lookup = dict(zip(difficulty_df['problem'], difficulty_df[['solved_percentage', 'difficulty_category']].to_dict('records')))
-    
-    return gsm8k_dataset, difficulty_lookup
+    return gsm8k_dataset
 
 
 def compute_accuracy_by_difficulty(verify_rewards, difficulty_categories):
-
     sample_labels = compute_sample_labels(verify_rewards)
     labels = sample_labels['labels']
     
-    difficulty_stats = {
-        'Easy': {'correct': 0, 'good_format': 0, 'total': 0},
-        'Medium': {'correct': 0, 'good_format': 0, 'total': 0},
-        'Hard': {'correct': 0, 'good_format': 0, 'total': 0}
-    }
+    difficulty_stats = {}
     
     for label, difficulty in zip(labels, difficulty_categories):
+        if difficulty not in difficulty_stats:
+            difficulty_stats[difficulty] = {'correct': 0, 'good_format': 0, 'total': 0}
+        
         difficulty_stats[difficulty]['total'] += 1
         
         if label['correctness'] == 'correct_format':
@@ -393,15 +388,12 @@ def compute_accuracy_by_difficulty(verify_rewards, difficulty_categories):
             difficulty_stats[difficulty]['good_format'] += 1
     
     results = {}
-    for difficulty in ['Easy', 'Medium', 'Hard']:
+
+    for difficulty in difficulty_stats:
         total = difficulty_stats[difficulty]['total']
-        if total > 0:
-            format_acc = difficulty_stats[difficulty]['good_format'] / total
-            answer_acc = difficulty_stats[difficulty]['correct'] / total
-            results[f'{difficulty.lower()}_format_accuracy'] = format_acc
-            results[f'{difficulty.lower()}_answer_accuracy'] = answer_acc
-        else:
-            results[f'{difficulty.lower()}_format_accuracy'] = 0.0
-            results[f'{difficulty.lower()}_answer_accuracy'] = 0.0
+        format_acc = difficulty_stats[difficulty]['good_format'] / total
+        answer_acc = difficulty_stats[difficulty]['correct'] / total
+        results[f'{difficulty.lower()}_format_accuracy'] = format_acc
+        results[f'{difficulty.lower()}_answer_accuracy'] = answer_acc
     
     return results
