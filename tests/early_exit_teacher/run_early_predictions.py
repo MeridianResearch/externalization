@@ -16,20 +16,20 @@ if __name__ == "__main__":
         print("No existing results found, generating new predictions...")
         model, tokenizer = load_default_model_and_tokenizer(model_config_path = "config_deepseek.yaml")
 
-        system_prompt = "You are a helpful programming tutor."
+        system_prompt = "You are a helpful programming tutor who explains concepts clearly and concisely."
         prefiller = ""
         
         test_prompts = [
             "Explain the concept of recursion in programming.",
-            "What are the key differences between supervised and unsupervised learning?",
-            "Describe how HTTP works and what happens when you visit a website."
+            "Natalia sold clips to 48 of her friends in April, and then she sold half as many clips in May. How many clips did Natalia sell altogether in April and May?",
+            "Sally puts her marble in a basket and then leaves the room. While she is gone, Anne moves the marble from the basket to a box. When Sally comes back, where will she look for the marble first?"
         ]
         
-        max_new_tokens = 400
-        all_modes = ['normal', 'unfrozen', 'frozen_residual']
+        max_new_tokens = 2000
+        all_modes = ['normal', 'frozen_residual']
         early_exit_modes = [mode for mode in all_modes if mode != 'normal']
         kl_factors = [0.5, 1.0, 2.0, 4.0]
-        # test_prompts = test_prompts[:1]; early_exit_modes = early_exit_modes[:1]; kl_factors = kl_factors[:1]   
+        # test_prompts = test_prompts[:1]; early_exit_modes = early_exit_modes[:1]; kl_factors = kl_factors[:1]; max_new_tokens = 1000
         early_exit_combinations = list(itertools.product(early_exit_modes, kl_factors))
         all_combinations = [('normal', None)] + early_exit_combinations
         
@@ -72,12 +72,11 @@ if __name__ == "__main__":
                 
                 # Evaluate the response
                 ans = kl_generator.evaluate_response(generated_tokens, chosen_layers, inputs)
-                
                 # Store results for this prompt
                 prompt_results.append({
                     'mode': mode,
                     'kl_factor': kl_factor,
-                    'response': tokenizer.decode(generated_tokens, skip_special_tokens=True),
+                    'response': tokenizer.decode(prediction.all_tokens, skip_special_tokens=True),
                     'evaluation': ans
                 })
             

@@ -150,7 +150,7 @@ Brief explanation: [your reasoning]
         print(f"\n{'='*60}")
         print(f"EVALUATION RESULTS")
         print(f"{'='*60}")
-        print(f"Response: {response[:200]}{'...' if len(response) > 200 else ''}")
+        print(f"Response: {response}")
         print(f"\nEarly Exit Statistics:")
         print(f"  Exit Rate: {early_exit_rate:.1%} ({early_exits}/{total_tokens} tokens)")
         print(f"  Layer Distribution: {layer_distribution}")
@@ -364,7 +364,7 @@ class EarlyExitGenerator:
             # Take the most likely next token (greedy decoding here)
             next_token = torch.argmax(logits[:, -1, :], dim=-1).unsqueeze(-1)
             prediction.update_after_prediction(next_token.item(), early_exit_layer)
-
+            if next_token == self.tokenizer.eos_token_id: break
         generated_tokens = prediction.generated_tokens
         chosen_exit_layers = prediction.chosen_exit_layers
         assert len(chosen_exit_layers) == len(generated_tokens), \
@@ -496,6 +496,7 @@ class KLExitGenerator(EarlyExitGenerator):
     def generate_normal(self, inputs, max_new_tokens = 100, visualize_early_exit = False):
         prediction = PredictionObject(self.model)    
         input_ids = inputs["input_ids"].clone()
+        prediction.all_tokens = input_ids[0].tolist()
         for step in range(max_new_tokens):  # generate 10 tokens
             if step == 0:
                 early_exit_layer = 27
@@ -506,6 +507,7 @@ class KLExitGenerator(EarlyExitGenerator):
             # Take the most likely next token (greedy decoding here)
             next_token = torch.argmax(logits[:, -1, :], dim=-1).unsqueeze(-1)
             prediction.update_after_prediction(next_token.item(), early_exit_layer)
+            if next_token == self.tokenizer.eos_token_id: break
         generated_tokens = prediction.generated_tokens
         chosen_exit_layers = prediction.chosen_exit_layers
         assert len(chosen_exit_layers) == len(generated_tokens), \
@@ -518,6 +520,7 @@ class KLExitGenerator(EarlyExitGenerator):
         student_prediction = PredictionObject(self.model)    
         teacher_prediction = PredictionObject(self.model)    
         input_ids = inputs["input_ids"].clone()
+        student_prediction.all_tokens = input_ids[0].tolist()
         for step in range(max_new_tokens):  # generate 10 tokens
             if step == 0:
                 early_exit_layer = 27

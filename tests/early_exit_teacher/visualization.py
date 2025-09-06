@@ -717,11 +717,11 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
     # Map prompts to friendly names based on content
     def get_prompt_name(prompt: str, idx: int) -> str:
         if 'recursion' in prompt.lower():
-            return 'Recursion'
-        elif 'supervised' in prompt.lower() or 'unsupervised' in prompt.lower():
-            return 'Training'
-        elif 'http' in prompt.lower():
-            return 'HTTP'
+            return 'Explain recursion'
+        elif 'sally' in prompt.lower():
+            return 'Theory of Mind'
+        elif 'natalia' in prompt.lower():
+            return 'GSM-8K'
         else:
             return f'Prompt {idx + 1}'
     
@@ -1255,7 +1255,7 @@ def generate_multi_prompt_html_visualization(all_results_data: List[Dict[str, An
         for result_idx, result in enumerate(results):
             mode = result['mode']
             kl_factor = result.get('kl_factor')
-            response = result['response']
+            response = result.get('response')
             evaluation = result.get('evaluation', {})
             
             mode_display = mode.replace('_', ' ').title()
