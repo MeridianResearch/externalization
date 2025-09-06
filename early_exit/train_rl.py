@@ -24,7 +24,7 @@ from torch.nn.utils.rnn import pad_sequence
 device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
-sft_model_path = "models/early_exit_20250905_layers_5_big"  # TODO: set path to SFT checkpoint
+sft_model_path = "models/early_exit_20250906_layers_5_big"  # TODO: set path to SFT checkpoint
 
 RL_HPARAMS = RLHyperparams()
 
@@ -233,6 +233,7 @@ def main_rl_training():
             eos_id = tokenizer.eos_token_id if tokenizer.eos_token_id is not None else -1
 
             seq_lens = (tokens_tensor != pad_id).sum(dim=1).float()
+            generated_lens = seq_lens - input_prompt_length
             contains_eos = (tokens_tensor == eos_id).any(dim=1) if eos_id != -1 else torch.zeros_like(seq_lens, dtype=torch.bool)
             clipped_ratio = 1.0 - contains_eos.float().mean().item()
             num_eos_tokens = int((tokens_tensor == eos_id).sum().item()) if eos_id != -1 else 0
@@ -268,9 +269,9 @@ def main_rl_training():
                 'neg_logprobs/exit': -student_sampled_exit_logprobs.mean().item(),
 
                 # Completions
-                'completions/mean_length': seq_lens.mean().item(),
-                'completions/min_length': seq_lens.min().item(),
-                'completions/max_length': seq_lens.max().item(),
+                'completions/mean_length': generated_lens.mean().item(),
+                'completions/min_length': generated_lens.min().item(),
+                'completions/max_length': generated_lens.max().item(),
                 'completions/clipped_ratio': clipped_ratio,
                 'completions/num_eos_tokens': num_eos_tokens,
 
