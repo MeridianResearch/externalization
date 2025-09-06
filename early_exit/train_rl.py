@@ -12,8 +12,8 @@ from typing import Optional
 import asyncio
 import pandas as pd
 
-from early_exit.util import get_model, load_model_from_wandb, load_model
-from early_exit.rl_utils import apply_masking, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty
+from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json
+from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
@@ -161,6 +161,9 @@ def main_rl_training():
                                                         tokenizer=tokenizer, config=config, device=device, 
                                                         system_prompt = RL_HPARAMS.system_prompt)  # TODO
         input_prompt_length = get_input_prompt_length(tokenizer, prompt, system_prompt = RL_HPARAMS.system_prompt)  # TODO: very hacky, do it in a cleaner way
+        generated_attention_mask = create_attention_mask_from_tokens(completions['tokens'], tokenizer.pad_token_id)[:, input_prompt_length:]
+        assert generated_attention_mask.sum(-1).tolist() == [len(item) for item in exit_info['prescribed_exit_layers']]
+        
         print(f"Input prompt length (in tokens): {input_prompt_length}")
         set_transformer_early_exit_mode(student, 'sft_student')
 
@@ -196,7 +199,7 @@ def main_rl_training():
 
         # 3) Reward components
         verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
-        kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs)
+        kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs, generated_attention_mask)
         avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
 
         # 3.1) Compute sample labels (similar to format_accuracy/answer_accuracy in reference)
@@ -223,7 +226,7 @@ def main_rl_training():
             index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).squeeze(-1)
         
         # import ipdb; ipdb.set_trace()
-        loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, normalized_advantages, optimizer, RL_HPARAMS)  # TODO
+        loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, normalized_advantages, generated_attention_mask, optimizer, RL_HPARAMS)  # TODO
         # 7) Logging (schema)
         torch.cuda.empty_cache()
         with torch.no_grad():

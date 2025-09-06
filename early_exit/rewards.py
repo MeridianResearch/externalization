@@ -150,7 +150,7 @@ def compute_token_logprobs_reference(model, tokens, input_prompt_length):
     return reference_generated_ntp_logprobs
 
 
-def compute_token_kl_from_logprobs(student_generated_ntp_logprobs, reference_generated__ntp_logprobs):
+def compute_token_kl_from_logprobs(student_generated_ntp_logprobs, reference_generated__ntp_logprobs, attention_mask):
     """
     Compute the average per-token KL-like divergence term between student and reference
     log-probabilities.
@@ -166,9 +166,9 @@ def compute_token_kl_from_logprobs(student_generated_ntp_logprobs, reference_gen
             (log p_student - log p_ref) across tokens.
             Note: this is not the full KL divergence over the vocabulary.
     """
-
     logprobs_diff = student_generated_ntp_logprobs - reference_generated__ntp_logprobs
-    kl_estimate = logprobs_diff.mean(-1)
+    assert logprobs_diff.shape == attention_mask.shape, "Log probs and attention mask should be of same shapes"
+    kl_estimate = logprobs_diff.sum(-1)/attention_mask.sum(-1)
     return kl_estimate
 
     
