@@ -194,6 +194,18 @@
             font-weight: 600;
         }
 
+        /* Styling for coherence lost button */
+        #metricCoherenceLostBtn {
+            transition: all 0.2s ease;
+            font-size: inherit;
+            white-space: nowrap;
+        }
+
+        #metricCoherenceLostBtn:hover {
+            background: #e9ecef;
+            border-color: #dee2e6;
+        }
+
         /* Clamp prompt to 3 lines when longer than 5 lines */
         .prompt-panel #prompt.clamp-3 {
             display: -webkit-box;
@@ -276,6 +288,7 @@
                 <div class="metrics">
                     <div class="metric">coherence: <span id="metricCoherence">0.91</span></div>
                     <div class="metric">calculations saved: <span id="metricSaved">42%</span></div>
+                    <button class="metric btn" id="metricCoherenceLostBtn" style="display: none; cursor: pointer;">coherence <span id="metricCoherenceValue">0.91</span> (lost <span id="metricCoherenceLostValue">0.1</span> vs no exit)</button>
                 </div>
                 <div class="legend" id="legend" style="justify-content: flex-start; margin-top: 0; margin-bottom: 10px;">
                     <span class="legend-label">Legend:</span>
@@ -292,6 +305,7 @@
         <div class="footer-note">
             <p><strong>Data Source:</strong> All metrics and generations displayed are pre-computed for demonstration purposes. Model used: DeepSeek-R1-Distill-Qwen-1.5B.</p>
             <p><strong>Coherence:</strong> Measures the logical consistency and quality of the generated text using GPT-5 as an automated judge across 4 dimensions: logical flow, completeness, clarity, and absence of repetition (scale: 1-10, higher values indicate better coherence).</p>
+            <p><strong>Coherence Lost:</strong> The reduction in coherence score compared to full generation without early exits (scale: 0+, lower values indicate better preservation of quality during early exit).</p>
             <p><strong>Calculations Saved:</strong> Percentage of computational resources conserved through early exit mechanisms, estimated from the proportion of transformer layers bypassed during inference while preserving output quality (scale: 0-100%).</p>
         </div>
         
@@ -312,6 +326,9 @@
             const coh = document.getElementById('metricCoherence');
             const saved = document.getElementById('metricSaved');
             const savedContainer = saved ? saved.parentElement : null;
+            const coherenceLostBtn = document.getElementById('metricCoherenceLostBtn');
+            const coherenceLostValue = document.getElementById('metricCoherenceLostValue');
+            const coherenceValue = document.getElementById('metricCoherenceValue');
             const earlyExitLegendItems = document.querySelectorAll('.legend-early-exit');
             if (!coh || !saved) return;
             
@@ -319,28 +336,48 @@
                 // Use real data from CSV for early exit mode
                 const coherence = row.generation_coherence_score || row['generation_coherence_score'] || '0.00';
                 const savings = row.savings || row['savings'] || '0';
-                coh.textContent = parseFloat(coherence).toFixed(2);
+                const coherenceDiff = row.coherence_diff || row['coherence_diff'] || '0.00';
+                
+                // Hide individual coherence metric and show combined button instead
+                if (coh.parentElement) coh.parentElement.style.display = 'none';
                 saved.textContent = `${parseFloat(savings).toFixed(1)}%`;
+                
+                // Show coherence lost button (make it positive if it's negative)
+                const coherenceLostFloat = Math.abs(parseFloat(coherenceDiff));
+                if (coherenceValue) coherenceValue.textContent = parseFloat(coherence).toFixed(2);
+                if (coherenceLostValue) coherenceLostValue.textContent = coherenceLostFloat.toFixed(2);
+                if (coherenceLostBtn) coherenceLostBtn.style.display = 'block';
+                
                 if (savedContainer) savedContainer.style.display = 'block';
                 // Show all legend items for early exit mode
                 earlyExitLegendItems.forEach(item => item.style.display = 'inline-flex');
             } else if (mode === 'normal' && row) {
-                // Use real data from CSV for normal mode - coherence from normal generation, hide savings
+                // Use real data from CSV for normal mode - coherence from normal generation, hide savings and coherence lost
                 const coherence = row.normal_generation_coherence_score || row['normal_generation_coherence_score'] || '0.00';
+                // Show individual coherence metric and hide combined button
+                if (coh.parentElement) coh.parentElement.style.display = 'block';
                 coh.textContent = parseFloat(coherence).toFixed(2);
                 if (savedContainer) savedContainer.style.display = 'none';
+                if (coherenceLostBtn) coherenceLostBtn.style.display = 'none';
                 // Hide early exit legend items for normal mode (only show "no early exit")
                 earlyExitLegendItems.forEach(item => item.style.display = 'none');
             } else {
                 // Fallback for when no row data is available
                 if (mode === 'trained') {
-                    coh.textContent = '0.91';
+                    // Hide individual coherence and show combined button
+                    if (coh.parentElement) coh.parentElement.style.display = 'none';
                     saved.textContent = '42%';
+                    if (coherenceValue) coherenceValue.textContent = '0.91';
+                    if (coherenceLostValue) coherenceLostValue.textContent = '0.1';
+                    if (coherenceLostBtn) coherenceLostBtn.style.display = 'block';
                     if (savedContainer) savedContainer.style.display = 'block';
                     earlyExitLegendItems.forEach(item => item.style.display = 'inline-flex');
                 } else {
+                    // Show individual coherence and hide combined button
+                    if (coh.parentElement) coh.parentElement.style.display = 'block';
                     coh.textContent = '0.91';
                     if (savedContainer) savedContainer.style.display = 'none';
+                    if (coherenceLostBtn) coherenceLostBtn.style.display = 'none';
                     earlyExitLegendItems.forEach(item => item.style.display = 'none');
                 }
             }
