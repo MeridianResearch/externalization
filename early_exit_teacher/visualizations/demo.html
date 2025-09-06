@@ -277,18 +277,23 @@
                     <div class="metric">coherence: <span id="metricCoherence">0.91</span></div>
                     <div class="metric">calculations saved: <span id="metricSaved">42%</span></div>
                 </div>
-                <div class="legend" style="justify-content: flex-start; margin-top: 0; margin-bottom: 10px;">
+                <div class="legend" id="legend" style="justify-content: flex-start; margin-top: 0; margin-bottom: 10px;">
                     <span class="legend-label">Legend:</span>
-                    <span class="legend-item"><span class="legend-swatch" style="background:#ced4da"></span>no early exit</span>
-                    <span class="legend-item"><span class="legend-swatch" style="background:#a5d8ff"></span>exited at level 25</span>
-                    <span class="legend-item"><span class="legend-swatch" style="background:#b2f2bb"></span>exited at level 20</span>
-                    <span class="legend-item"><span class="legend-swatch" style="background:#ffd8a8"></span>exited at level 15</span>
-                    <span class="legend-item"><span class="legend-swatch" style="background:#ffc9c9"></span>exited at level 5</span>
+                    <span class="legend-item legend-no-exit"><span class="legend-swatch" style="background:#ced4da"></span>no early exit</span>
+                    <span class="legend-item legend-early-exit"><span class="legend-swatch" style="background:#a5d8ff"></span>exited at layer 25</span>
+                    <span class="legend-item legend-early-exit"><span class="legend-swatch" style="background:#b2f2bb"></span>exited at layer 20</span>
+                    <span class="legend-item legend-early-exit"><span class="legend-swatch" style="background:#ffd8a8"></span>exited at layer 15</span>
+                    <span class="legend-item legend-early-exit"><span class="legend-swatch" style="background:#ffc9c9"></span>exited at layer 5</span>
                 </div>
                 <div id="generation" class="content">—</div>
             </div>
         </div>
 
+        <div class="footer-note">
+            <p><strong>Data Source:</strong> All metrics and generations displayed are pre-computed for demonstration purposes. Model used: DeepSeek-R1-Distill-Qwen-1.5B.</p>
+            <p><strong>Coherence:</strong> Measures the logical consistency and quality of the generated text using GPT-5 as an automated judge across 4 dimensions: logical flow, completeness, clarity, and absence of repetition (scale: 1-10, higher values indicate better coherence).</p>
+            <p><strong>Calculations Saved:</strong> Percentage of computational resources conserved through early exit mechanisms, estimated from the proportion of transformer layers bypassed during inference while preserving output quality (scale: 0-100%).</p>
+        </div>
         
     </div>
 
@@ -301,17 +306,43 @@
         const STREAM_DELAY_MS = 35;
         let currentStreamRunId = 0;
         let currentMode = 'trained';
+        let currentRowData = null;
 
-        function updateMetricsForMode(mode) {
+        function updateMetricsForMode(mode, row = null) {
             const coh = document.getElementById('metricCoherence');
             const saved = document.getElementById('metricSaved');
+            const savedContainer = saved ? saved.parentElement : null;
+            const earlyExitLegendItems = document.querySelectorAll('.legend-early-exit');
             if (!coh || !saved) return;
-            if (mode === 'trained') {
-                coh.textContent = '0.91';
-                saved.textContent = '42%';
+            
+            if (mode === 'trained' && row) {
+                // Use real data from CSV for early exit mode
+                const coherence = row.generation_coherence_score || row['generation_coherence_score'] || '0.00';
+                const savings = row.savings || row['savings'] || '0';
+                coh.textContent = parseFloat(coherence).toFixed(2);
+                saved.textContent = `${parseFloat(savings).toFixed(1)}%`;
+                if (savedContainer) savedContainer.style.display = 'block';
+                // Show all legend items for early exit mode
+                earlyExitLegendItems.forEach(item => item.style.display = 'inline-flex');
+            } else if (mode === 'normal' && row) {
+                // Use real data from CSV for normal mode - coherence from normal generation, hide savings
+                const coherence = row.normal_generation_coherence_score || row['normal_generation_coherence_score'] || '0.00';
+                coh.textContent = parseFloat(coherence).toFixed(2);
+                if (savedContainer) savedContainer.style.display = 'none';
+                // Hide early exit legend items for normal mode (only show "no early exit")
+                earlyExitLegendItems.forEach(item => item.style.display = 'none');
             } else {
-                coh.textContent = '0.91';
-                saved.textContent = '0%';
+                // Fallback for when no row data is available
+                if (mode === 'trained') {
+                    coh.textContent = '0.91';
+                    saved.textContent = '42%';
+                    if (savedContainer) savedContainer.style.display = 'block';
+                    earlyExitLegendItems.forEach(item => item.style.display = 'inline-flex');
+                } else {
+                    coh.textContent = '0.91';
+                    if (savedContainer) savedContainer.style.display = 'none';
+                    earlyExitLegendItems.forEach(item => item.style.display = 'none');
+                }
             }
         }
 
@@ -320,14 +351,23 @@
             promptEl.textContent = prompt ? String(prompt) : '—';
             applyPromptClamp();
 
+            // Cache both early exit and normal generation data
             const rawTokens = row && (row.gen_tokens || row['gen_tokens']);
             const rawExits = row && (row.exit_layers || row['exit_layers']);
+            const rawNormalTokens = row && (row.normal_gen_tokens || row['normal_gen_tokens']);
 
             const tokens = parseTokens(rawTokens);
             const exits = parseExitLayers(rawExits);
-            // Don't auto-stream; wait for user click
+            const normalTokens = parseTokens(rawNormalTokens);
+            
+            // Cache both for different modes
             window.__cachedTokens = tokens;
             window.__cachedExits = exits;
+            window.__cachedNormalTokens = normalTokens;
+            
+            // Store current row data and update metrics
+            currentRowData = row;
+            updateMetricsForMode(currentMode, currentRowData);
         }
 
         let __allRows = [];
@@ -426,6 +466,30 @@
             appendNext(0);
         }
 
+        function streamNormalTokens(tokens) {
+            currentStreamRunId += 1;
+            const runId = currentStreamRunId;
+            generationEl.innerHTML = '';
+
+            function appendNext(i) {
+                if (runId !== currentStreamRunId) return; // cancelled by a newer stream
+                if (i >= tokens.length) return;
+
+                const cleaned = cleanToken(tokens[i]);
+                if (cleaned) {
+                    const span = document.createElement('span');
+                    span.className = 'token';
+                    span.style.backgroundColor = '#ced4da'; // Use same color as "no early exit"
+                    span.textContent = cleaned;
+                    generationEl.appendChild(span);
+                }
+
+                setTimeout(() => appendNext(i + 1), STREAM_DELAY_MS);
+            }
+
+            appendNext(0);
+        }
+
         function parseCsvText(text) {
             const result = Papa.parse(text, { header: true, skipEmptyLines: true });
             if (result && result.data && result.data.length > 0) {
@@ -491,9 +555,10 @@
                             streamColoredTokens(window.__cachedTokens, window.__cachedExits);
                         }
                     } else {
-                        // placeholder for normal mode
-                        currentStreamRunId += 1;
-                        generationEl.textContent = '—';
+                        // normal mode - show normal tokens without coloring
+                        if (Array.isArray(window.__cachedNormalTokens)) {
+                            streamNormalTokens(window.__cachedNormalTokens);
+                        }
                     }
                 });
             }
@@ -505,13 +570,13 @@
                     modeTrainedBtn.classList.remove('active');
                     currentStreamRunId += 1;
                     generationEl.textContent = '—';
-                    updateMetricsForMode(currentMode);
+                    updateMetricsForMode(currentMode, currentRowData);
                 });
                 modeTrainedBtn.addEventListener('click', () => {
                     currentMode = 'trained';
                     modeTrainedBtn.classList.add('active');
                     modeNormalBtn.classList.remove('active');
-                    updateMetricsForMode(currentMode);
+                    updateMetricsForMode(currentMode, currentRowData);
                 });
             }
 
@@ -524,6 +589,8 @@
                     // Reset cached data and UI
                     window.__cachedTokens = [];
                     window.__cachedExits = [];
+                    window.__cachedNormalTokens = [];
+                    currentRowData = null;
                     promptEl.textContent = '—';
                     generationEl.textContent = '—';
                     applyPromptClamp();
@@ -593,7 +660,7 @@
         // Auto-load the local CSV on page load; if it fails, show error.
         loadLocalCsv();
         // Initialize metrics with default mode
-        updateMetricsForMode(currentMode);
+        updateMetricsForMode(currentMode, currentRowData);
 
         function applyPromptClamp() {
             if (!promptEl) return;

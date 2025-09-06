@@ -24,7 +24,7 @@ base_model = get_model(base_model, config['model'], device)
 model = replace_attention_layers(base_model, config['lora'], device)
 # Download the artifact
 model = load_model_from_wandb(model, model_path = model_path, 
-                              artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
+                              artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fjb5u3q4:v0')
 
 print(f"Model loaded w exitable layers: {model.exitable_layer_idxs}")
 
@@ -118,7 +118,11 @@ csv_headers = [
     "generation_text",
     "gen_token_ids",
     "gen_tokens",
-    "exit_layers"
+    "exit_layers",
+    "savings",
+    "normal_generation_text",
+    "normal_gen_token_ids",
+    "normal_gen_tokens"
 ]
 if not os.path.exists(results_csv_path) or os.path.getsize(results_csv_path) == 0:
     with open(results_csv_path, mode="w", newline="", encoding="utf-8") as f:
@@ -135,6 +139,7 @@ with open(results_csv_path, mode="a", newline="", encoding="utf-8") as f:
         prefiller = item["prefiller"]
 
         with torch.no_grad():
+            # Generate with early exit (free_generate mode)
             generation_text, outputs = generate_text(
                 model=model,
                 prompt=prompt,
@@ -144,11 +149,31 @@ with open(results_csv_path, mode="a", newline="", encoding="utf-8") as f:
                 generation_config=config['generation'],
                 device=device
             )
+            
+            # Generate normal (teacher mode) for comparison
+            set_transformer_early_exit_mode(model, 'sft_teacher')
+            normal_generation_text, normal_outputs = generate_text(
+                model=model,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                prefiller=prefiller,
+                tokenizer=tokenizer,
+                generation_config=config['generation'],
+                device=device
+            )
+            # Reset back to free_generate mode for next iteration
+            set_transformer_early_exit_mode(model, 'free_generate')
 
-        # In free_generate mode, outputs is a tuple: (sequences, exit_layers)
+        # Process early exit generation (free_generate mode)
         gen_token_ids = []
         gen_tokens = []
         exit_layers_list = []
+        savings_percent = 0.0
+        
+        # Process normal generation (teacher mode)
+        normal_gen_token_ids = []
+        normal_gen_tokens = []
+        
         try:
             if isinstance(outputs, tuple) and len(outputs) == 2:
                 sequences, exit_layers = outputs
@@ -157,6 +182,19 @@ with open(results_csv_path, mode="a", newline="", encoding="utf-8") as f:
                     exit_layers_cpu = exit_layers.detach().cpu()
                     exit_layers_list = exit_layers_cpu.squeeze(0).tolist()
                     gen_len = len(exit_layers_list)
+                    
+                    # Calculate savings: avg((28 - actual_exit) / 28) * 100
+                    # Handle Infinity values (no early exit) as 0 savings
+                    if exit_layers_list:
+                        savings_values = []
+                        for exit_layer in exit_layers_list:
+                            if exit_layer == float('inf'):
+                                # No early exit, used all 28 layers = 0 savings
+                                savings_values.append(0.0)
+                            else:
+                                # Early exit at layer exit_layer
+                                savings_values.append((28 - exit_layer) / 28)
+                        savings_percent = round(sum(savings_values) / len(savings_values) * 100, 2)
                 else:
                     gen_len = 0
 
@@ -171,7 +209,27 @@ with open(results_csv_path, mode="a", newline="", encoding="utf-8") as f:
                     gen_token_ids = seq_cpu
                     gen_tokens = tokenizer.convert_ids_to_tokens(gen_token_ids)
         except Exception as e:
-            print(f"Logging parse error: {e}")
+            print(f"Logging parse error for early exit: {e}")
+            
+        # Process normal generation tokens (extract only generated part, not prompt)
+        try:
+            if isinstance(normal_outputs, tuple) and len(normal_outputs) >= 1:
+                normal_sequences = normal_outputs[0]  # First element should be sequences
+                if isinstance(normal_sequences, torch.Tensor):
+                    normal_seq_cpu = normal_sequences.detach().cpu().squeeze(0).tolist()
+                    # Extract only the generated tokens (similar logic to early exit)
+                    # For teacher mode, we need to figure out how many tokens were generated
+                    # We can estimate this by comparing with the input length or using generation config
+                    max_new_tokens = config['generation'].get('max_new_tokens', 400)
+                    normal_gen_token_ids = normal_seq_cpu[-max_new_tokens:] if len(normal_seq_cpu) > max_new_tokens else normal_seq_cpu
+                    normal_gen_tokens = tokenizer.convert_ids_to_tokens(normal_gen_token_ids)
+            elif isinstance(normal_outputs, torch.Tensor):
+                normal_seq_cpu = normal_outputs.detach().cpu().squeeze(0).tolist()
+                max_new_tokens = config['generation'].get('max_new_tokens', 400)
+                normal_gen_token_ids = normal_seq_cpu[-max_new_tokens:] if len(normal_seq_cpu) > max_new_tokens else normal_seq_cpu
+                normal_gen_tokens = tokenizer.convert_ids_to_tokens(normal_gen_token_ids)
+        except Exception as e:
+            print(f"Logging parse error for normal generation: {e}")
 
         writer.writerow({
             "id": item["id"],
@@ -183,6 +241,10 @@ with open(results_csv_path, mode="a", newline="", encoding="utf-8") as f:
             "gen_token_ids": json.dumps(gen_token_ids),
             "gen_tokens": json.dumps(gen_tokens),
             "exit_layers": json.dumps(exit_layers_list),
+            "savings": savings_percent,
+            "normal_generation_text": normal_generation_text,
+            "normal_gen_token_ids": json.dumps(normal_gen_token_ids),
+            "normal_gen_tokens": json.dumps(normal_gen_tokens),
         })
 
 print(f"Wrote results to: {results_csv_path}")
