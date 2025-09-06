@@ -4,7 +4,7 @@
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Demo • Externalization</title>   
+    <title>Externalization via Early Exit Mechanisms</title>   
     <script src="./PapaParse.js"></script>
     <style>
         * {
@@ -260,11 +260,107 @@
             font-size: 0.85em;
             margin-top: 16px;
         }
+
+        .intro-section {
+            text-align: center;
+            margin-bottom: 24px;
+            padding: 0 20px;
+        }
+
+        .description {
+            color: #495057;
+            font-size: 1.05em;
+            line-height: 1.6;
+            margin-bottom: 16px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .info-section {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .info-section h3 {
+            color: #343a40;
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .info-section p {
+            color: #495057;
+            font-size: 0.95em;
+            line-height: 1.5;
+            margin-bottom: 8px;
+        }
+
+        .info-section p:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-section strong {
+            color: #343a40;
+        }
+
+        .github-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #24292f;
+            color: #ffffff;
+            text-decoration: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            margin-bottom: 8px;
+        }
+
+        .github-link:hover {
+            background: #32383f;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(36, 41, 47, 0.15);
+        }
+
+        .github-icon {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Demo: We aim to limit amount of calculations model spends in hidden internal layers</h1>
+        <h1>Externalization via Early Exit Mechanisms</h1>
+
+        <div class="intro-section">
+            <div class="description">
+                This demo showcases a framework for training language models to externalize their reasoning through early exit mechanisms. We demonstrate the capabilities of our SFT-trained model by comparing two modes: <strong>normal generation</strong> (full computational depth) vs. <strong>early exit enabled</strong> (adaptive layer termination). The visualization displays pre-computed examples showing differences in output quality, coherence scores, and computational savings achieved through strategic early termination.
+            </div>
+            <a href="https://github.com/MeridianResearch/externalization" class="github-link" target="_blank" rel="noopener noreferrer">
+                <svg class="github-icon" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                </svg>
+                View Implementation
+            </a>
+
+            <div class="info-section">
+                <h3>About This Demo</h3>
+                <p><strong>Data Source:</strong> All metrics and generations displayed are pre-computed for demonstration purposes. Model used: DeepSeek-R1-Distill-Qwen-1.5B.</p>
+                <p><strong>Coherence:</strong> Measures the logical consistency and quality of the generated text using GPT-5 as an automated judge across 4 dimensions: logical flow, completeness, clarity, and absence of repetition (scale: 1-10, higher values indicate better coherence).</p>
+                <p><strong>Coherence Lost:</strong> The reduction in coherence score compared to full generation without early exits (scale: 0+, lower values indicate better preservation of quality during early exit).</p>
+                <p><strong>Calculations Saved:</strong> Percentage of computational resources conserved through early exit mechanisms, estimated from the proportion of transformer layers bypassed during inference while preserving output quality (scale: 0-100%).</p>
+            </div>
+        </div>
 
         <div id="error" class="error">Could not load <code>run_log.csv</code> from this folder.</div>
 
@@ -302,12 +398,6 @@
             </div>
         </div>
 
-        <div class="footer-note">
-            <p><strong>Data Source:</strong> All metrics and generations displayed are pre-computed for demonstration purposes. Model used: DeepSeek-R1-Distill-Qwen-1.5B.</p>
-            <p><strong>Coherence:</strong> Measures the logical consistency and quality of the generated text using GPT-5 as an automated judge across 4 dimensions: logical flow, completeness, clarity, and absence of repetition (scale: 1-10, higher values indicate better coherence).</p>
-            <p><strong>Coherence Lost:</strong> The reduction in coherence score compared to full generation without early exits (scale: 0+, lower values indicate better preservation of quality during early exit).</p>
-            <p><strong>Calculations Saved:</strong> Percentage of computational resources conserved through early exit mechanisms, estimated from the proportion of transformer layers bypassed during inference while preserving output quality (scale: 0-100%).</p>
-        </div>
         
     </div>
 
