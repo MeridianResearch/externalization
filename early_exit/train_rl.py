@@ -41,6 +41,7 @@ student = load_model_from_wandb(student, model_path = "models/trained_model_v0",
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
+reference.eval()
 # TODO: ensure no early-exit logic is active for reference model
 
 # Dataset
@@ -168,11 +169,10 @@ def main_rl_training():
         set_transformer_early_exit_mode(student, 'sft_student')
 
         # 2) Log-probs for KL and rewards (reference vs student)  # TODO: confirm scoring design
-        
-        ref_logprobs = compute_token_logprobs_reference(reference, 
-                                                        completions['tokens'],
-                                                        input_prompt_length)  # TODO
-        
+        with torch.no_grad():
+            ref_logprobs = compute_token_logprobs_reference(reference, 
+                                                            completions['tokens'],
+                                                            input_prompt_length)  # TODO
         prescribed_exit_layers = pad_sequence(exit_info['prescribed_exit_layers'], batch_first=True, padding_value=torch.inf)
         stu_logprobs, student_early_exit_logprobs = compute_token_logprobs_student(student, 
                                                       completions['tokens'], 
