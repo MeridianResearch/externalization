@@ -96,7 +96,7 @@ def center_rewards_per_prompt(rewards, batch_size: int, k: int):
     return adv.reshape(-1)
 
 
-def compute_sequence_mean_loglik_student(student_log_likelihoods, student_early_exit_logprobs):
+def compute_sequence_mean_loglik_student(student_log_likelihoods, student_early_exit_logprobs, attention_mask):
     """
     TODO: Add the exit log probs!
     Returns: FloatTensor [batch*K].
@@ -106,7 +106,9 @@ def compute_sequence_mean_loglik_student(student_log_likelihoods, student_early_
     assert student_early_exit_logprobs.shape == student_log_likelihoods.shape, \
     f"student_early_exit_logprobs (shape = {student_early_exit_logprobs.shape})  must have the same shape as \
     student_log_likelihoods = {student_log_likelihoods.shape}"
-    return student_log_likelihoods.mean(-1) + student_early_exit_logprobs.mean(-1)
+    assert student_log_likelihoods.shape == student_early_exit_logprobs.shape, "Student log likelihoods and logprobs should have same shapes"
+    assert student_log_likelihoods.shape == attention_mask.shape, "Student log likelihoods and attention mask should have same shapes"
+    return (student_log_likelihoods.sum(-1) + student_early_exit_logprobs.sum(-1))/attention_mask.sum(-1)
 
 
 def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
@@ -126,14 +128,14 @@ def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
     return -(advantages.detach() * log_likelihoods).mean(-1)
 
 
-def weighted_sft_step(student_log_likelihoods, student_early_exit_logprobs, advantages, optimizer, RL_HPARAMS):
+def weighted_sft_step(student_log_likelihoods, student_early_exit_logprobs, advantages, attention_mask, optimizer, RL_HPARAMS):
     """
     Returns: scalar loss (FloatTensor).
     """
     optimizer.zero_grad()
     sequence_mean_log_likelihoods = compute_sequence_mean_loglik_student(student_log_likelihoods, 
-                                                                         student_early_exit_logprobs
-                                                                         ) # ignore first token's exit prob
+                                                                         student_early_exit_logprobs,
+                                                                         attention_mask) # ignore first token's exit prob
     loss = weighted_rloo_loss(advantages, sequence_mean_log_likelihoods, RL_HPARAMS)
     loss.backward()
     optimizer.step()
@@ -192,7 +194,7 @@ def create_attention_mask_from_tokens(tokens, pad_token_id: int):
         if len(pad_positions) > 0:
             # Keep the first EOS, mask everything after it
             first_eos_pos = pad_positions[0].item()
-            mask[i, first_eos_pos + 1:] = 0  # Mask everything AFTER the first EOS
+            mask[i, first_eos_pos:] = 0  # Mask everything AFTER the first EOS
             # The first EOS at position first_eos_pos remains with mask=1
     
     return mask
