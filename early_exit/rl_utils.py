@@ -218,6 +218,7 @@ def apply_masking(input_probs, tokens, input_prompt_length, pad_token_id, mode =
     
     return masked_logprobs
 
+@torch.no_grad()
 def compute_sample_labels(verification_rewards):
     """
     Compute correctness and format labels for samples, similar to format_accuracy/answer_accuracy in reference.
@@ -371,6 +372,7 @@ def load_gsm8k_with_difficulty():
     return gsm8k_dataset
 
 
+@torch.no_grad()
 def compute_accuracy_by_difficulty(verify_rewards, difficulty_categories):
     sample_labels = compute_sample_labels(verify_rewards)
     labels = sample_labels['labels']

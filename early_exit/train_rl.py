@@ -170,10 +170,9 @@ def main_rl_training():
         set_transformer_early_exit_mode(student, 'sft_student')
 
         # 2) Log-probs for KL and rewards (reference vs student)  # TODO: confirm scoring design
-        with torch.no_grad():
-            ref_logprobs = compute_token_logprobs_reference(reference, 
-                                                            completions['tokens'],
-                                                            input_prompt_length)  # TODO
+        ref_logprobs = compute_token_logprobs_reference(reference, 
+                                                        completions['tokens'],
+                                                        input_prompt_length)  # TODO
         prescribed_exit_layers = pad_sequence(exit_info['prescribed_exit_layers'], batch_first=True, padding_value=torch.inf)
         stu_logprobs, student_early_exit_logprobs = compute_token_logprobs_student(student, 
                                                       completions['tokens'], 
@@ -199,18 +198,16 @@ def main_rl_training():
         )
 
         # 3) Reward components
-        with torch.no_grad():
-            verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
-            kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs, generated_attention_mask)
-            avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
+        verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
+        kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs, generated_attention_mask)
+        avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
 
         # 3.1) Compute sample labels (similar to format_accuracy/answer_accuracy in reference)
-        with torch.no_grad():
-            sample_labels = compute_sample_labels(verify)
+        sample_labels = compute_sample_labels(verify)
 
-            difficulty_categories = [difficulty_category] * RL_HPARAMS.k
-            #compute accuracy metrics by difficulty (all samples have same difficulty as same prompt)
-            difficulty_accuracies = compute_accuracy_by_difficulty(verify, difficulty_categories)
+        difficulty_categories = [difficulty_category] * RL_HPARAMS.k
+        #compute accuracy metrics by difficulty (all samples have same difficulty as same prompt)
+        difficulty_accuracies = compute_accuracy_by_difficulty(verify, difficulty_categories)
 
         # import ipdb; ipdb.set_trace()
         # 4) Total reward per sequence (simple linear combination)
