@@ -4,7 +4,6 @@
 - Flow: K rollouts per prompt → compute rewards (verify - beta*KL - lambda*avg_exit_layer) → center per-prompt → weighted SFT.
 """
 
-import time
 import torch
 from torch.optim import Adam
 import wandb
@@ -13,7 +12,7 @@ from typing import Optional
 import asyncio
 import pandas as pd
 
-from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json, save_model
+from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json
 from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
@@ -27,11 +26,7 @@ model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_greedy.yaml"
 sft_model_path = "models/gsm8k_old_school_1"  # TODO: set path to SFT checkpoint
 
-RL_HPARAMS = RLHyperparams(
-                           sample_log_interval=1,
-                           sample_max_rows = 1,
-                           SAVE_EVERY_HOURS=5
-                           )
+RL_HPARAMS = RLHyperparams()
 
 
 # --- Models (schema) ---
@@ -50,7 +45,11 @@ student = load_model(student, sft_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
+reference = replace_attention_layers(reference, config['lora'], device)
+reference = load_model(reference, sft_model_path)
+set_transformer_early_exit_mode(reference, 'sft_student')
 reference.eval()
+
 # TODO: ensure no early-exit logic is active for reference model
 
 # Dataset
@@ -62,15 +61,13 @@ def main_rl_training():
     """
     Schema: Generate → Reward → Center → Weighted SFT
     """
-    save_interval = RL_HPARAMS.SAVE_EVERY_HOURS * 3600
-    next_save_ts = time.time() + save_interval
     # TODO: optimizer (e.g., Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5))
     # Check if there are better optimizers for this problem
     optimizer = Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5)
     # we use https://huggingface.co/docs/trl/rloo_trainer  as an inspiration for logging. 
 
     run = wandb.init(
-        project="early-exit-RL",
+        project="early-exit-RL-single-prompt",
         entity="vkarthik095-university-of-amsterdam",
         config=dict(
             **config,
@@ -175,25 +172,29 @@ def main_rl_training():
         input_prompt_length = get_input_prompt_length(tokenizer, prompt, system_prompt = RL_HPARAMS.system_prompt)  # TODO: very hacky, do it in a cleaner way
         generated_attention_mask = create_attention_mask_from_tokens(completions['tokens'], tokenizer.pad_token_id)[:, input_prompt_length:]
         assert generated_attention_mask.sum(-1).tolist() == [len(item) for item in exit_info['prescribed_exit_layers']]
-        
-        print(f"Input prompt length (in tokens): {input_prompt_length}, completions.shape = {completions['tokens'].shape}")
+        print(f"Input prompt length (in tokens): {input_prompt_length}")
         set_transformer_early_exit_mode(student, 'sft_student')
 
         # 2) Log-probs for KL and rewards (reference vs student)  # TODO: confirm scoring design
-        with torch.no_grad():
-            ref_logprobs = compute_token_logprobs_reference(reference, 
-                                                            completions['tokens'],
-                                                            input_prompt_length)  # TODO
+        
         prescribed_exit_layers = pad_sequence(exit_info['prescribed_exit_layers'], batch_first=True, padding_value=torch.inf)
+        with torch.no_grad():
+            ref_logprobs, reference_early_exit_logprobs = compute_token_logprobs_student(reference, 
+                                                        completions['tokens'],   
+                                                        prescribed_exit_layers=prescribed_exit_layers,
+                                                        input_prompt_length=input_prompt_length)  # TODO
         stu_logprobs, student_early_exit_logprobs = compute_token_logprobs_student(student, 
                                                       completions['tokens'], 
                                                       prescribed_exit_layers=prescribed_exit_layers,
                                                       input_prompt_length=input_prompt_length)  # TODO
+        
         # import ipdb; ipdb.set_trace()
         stu_logprobs = apply_masking(stu_logprobs, completions['tokens'], input_prompt_length, tokenizer.pad_token_id)
         student_early_exit_logprobs = apply_masking(student_early_exit_logprobs, completions['tokens'], input_prompt_length, 
                                                  tokenizer.pad_token_id, mode = 'early_exit_probs')
         ref_logprobs = apply_masking(ref_logprobs, completions['tokens'], input_prompt_length, tokenizer.pad_token_id)
+        reference_early_exit_logprobs = apply_masking(reference_early_exit_logprobs, completions['tokens'], input_prompt_length, 
+                                                 tokenizer.pad_token_id, mode = 'early_exit_probs')
         # Runtime validation of rollout tensors (dtype/shape checks)
         _ = RolloutBatch(
             tokens=completions['tokens'],
@@ -206,10 +207,15 @@ def main_rl_training():
             student_early_exit_logprobs=student_early_exit_logprobs
             #avg_exit_layer=exit_info.get('avg_exit_layer', None), #calced in rewards later
         )
-
+        sampled_early_exit_layer_idxs_early = map_layers_to_indices(prescribed_exit_layers, student.exitable_layer_idxs).to(device)
+        student_sampled_exit_logprobs = student_early_exit_logprobs.gather(
+            index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).squeeze(-1)
+        reference_sampled_exit_logprobs = reference_early_exit_logprobs.gather(
+            index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).squeeze(-1)      
         # 3) Reward components
         verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
-        kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs, generated_attention_mask)
+        kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs, generated_attention_mask) + \
+                compute_token_kl_from_logprobs(student_sampled_exit_logprobs, reference_sampled_exit_logprobs, generated_attention_mask)
         avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
 
         # 3.1) Compute sample labels (similar to format_accuracy/answer_accuracy in reference)
@@ -231,10 +237,6 @@ def main_rl_training():
         normalized_advantages = advantages / adv_std
         
         # 6) Weighted SFT update
-        sampled_early_exit_layer_idxs_early = map_layers_to_indices(prescribed_exit_layers, student.exitable_layer_idxs).to(device)
-        student_sampled_exit_logprobs = student_early_exit_logprobs.gather(
-            index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).squeeze(-1)
-        
         # import ipdb; ipdb.set_trace()
         loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, normalized_advantages, generated_attention_mask, optimizer, RL_HPARAMS)  # TODO
         # 7) Logging (schema)
@@ -303,30 +305,30 @@ def main_rl_training():
             if (i % RL_HPARAMS.sample_log_interval) == 0:
                 num_rows = min(len(completions['texts']), RL_HPARAMS.sample_max_rows)
 
-                # async def evaluate_batch_coherence():
-                #     tasks = []
-                #     for row_idx in range(num_rows):
-                #         task = evaluate_coherence(prompt, completions['texts'][row_idx])
-                #         tasks.append(task)
+                async def evaluate_batch_coherence():
+                    tasks = []
+                    for row_idx in range(num_rows):
+                        task = evaluate_coherence(prompt, completions['texts'][row_idx])
+                        tasks.append(task)
                     
-                #     results = await asyncio.gather(*tasks)
-                #     return results
+                    results = await asyncio.gather(*tasks)
+                    return results
                 
-                # coherence_batch_results = asyncio.run(evaluate_batch_coherence())
+                coherence_batch_results = asyncio.run(evaluate_batch_coherence())
 
-                # avg_coherence = sum(r['coherence'] for r in coherence_batch_results) / len(coherence_batch_results)
-                # avg_completeness = sum(r['completeness'] for r in coherence_batch_results) / len(coherence_batch_results)
-                # avg_clarity = sum(r['clarity'] for r in coherence_batch_results) / len(coherence_batch_results)
-                # avg_no_repetition = sum(r['no_repetition'] for r in coherence_batch_results) / len(coherence_batch_results)
-                # avg_overall = sum(r['average'] for r in coherence_batch_results) / len(coherence_batch_results)
+                avg_coherence = sum(r['coherence'] for r in coherence_batch_results) / len(coherence_batch_results)
+                avg_completeness = sum(r['completeness'] for r in coherence_batch_results) / len(coherence_batch_results)
+                avg_clarity = sum(r['clarity'] for r in coherence_batch_results) / len(coherence_batch_results)
+                avg_no_repetition = sum(r['no_repetition'] for r in coherence_batch_results) / len(coherence_batch_results)
+                avg_overall = sum(r['average'] for r in coherence_batch_results) / len(coherence_batch_results)
     
-                # log_dict.update({
-                #     'coherence/batch_coherence': avg_coherence,
-                #     'coherence/batch_completeness': avg_completeness,
-                #     'coherence/batch_clarity': avg_clarity,
-                #     'coherence/batch_no_repetition': avg_no_repetition,
-                #     'coherence/batch_average': avg_overall,
-                # })
+                log_dict.update({
+                    'coherence/batch_coherence': avg_coherence,
+                    'coherence/batch_completeness': avg_completeness,
+                    'coherence/batch_clarity': avg_clarity,
+                    'coherence/batch_no_repetition': avg_no_repetition,
+                    'coherence/batch_average': avg_overall,
+                })
 
                 columns = [
                     'episode',
@@ -339,21 +341,21 @@ def main_rl_training():
                     'samples/avg_exit_layer',
                     'samples/gen_len',
                     'samples/contains_eos',
-                    # 'samples/selection_index',
-                    # 'samples/correctness_label',
-                    # 'samples/format_label',
-                    # 'samples/coherence_coherence',
-                    # 'samples/coherence_completeness',
-                    # 'samples/coherence_clarity',
-                    # 'samples/coherence_no_repetition',
-                    # 'samples/coherence_average',
-                    # 'samples/coherence_explanation',
+                    'samples/selection_index',
+                    'samples/correctness_label',
+                    'samples/format_label',
+                    'samples/coherence_coherence',
+                    'samples/coherence_completeness',
+                    'samples/coherence_clarity',
+                    'samples/coherence_no_repetition',
+                    'samples/coherence_average',
+                    'samples/coherence_explanation',
                 ]
                 for row_idx in range(num_rows):
                     full_len = int(seq_lens[row_idx].item())
                     gen_len = max(0, full_len - int(input_prompt_length))
 
-                    # coherence_result = coherence_batch_results[row_idx]
+                    coherence_result = coherence_batch_results[row_idx]
 
                     table_history.append([
                         i,
@@ -366,15 +368,15 @@ def main_rl_training():
                         float(avg_exit_layer[row_idx].item()),
                         int(gen_len),
                         bool(contains_eos[row_idx].item()),
-                        # int(row_idx),
-                        # sample_labels['labels'][row_idx]['correctness'],
-                        # sample_labels['labels'][row_idx]['format_quality'],
-                        # int(coherence_result['coherence']),
-                        # int(coherence_result['completeness']),
-                        # int(coherence_result['clarity']),
-                        # int(coherence_result['no_repetition']),
-                        # float(coherence_result['average']),
-                        # coherence_result['explanation']
+                        int(row_idx),
+                        sample_labels['labels'][row_idx]['correctness'],
+                        sample_labels['labels'][row_idx]['format_quality'],
+                        int(coherence_result['coherence']),
+                        int(coherence_result['completeness']),
+                        int(coherence_result['clarity']),
+                        int(coherence_result['no_repetition']),
+                        float(coherence_result['average']),
+                        coherence_result['explanation']
                     ])
 
                 table = wandb.Table(columns=columns)
@@ -385,10 +387,7 @@ def main_rl_training():
                 # log_dict['samples/selection_count'] = num_rows
 
             wandb.log(log_dict)
-            now = time.time()
-            if now >= next_save_ts:
-                save_model(student, save_path = f"models/rl-run-1/epoch-{i}")
-                next_save_ts = now + save_interval
+
     wandb.finish()
 
 

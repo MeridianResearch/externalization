@@ -4,8 +4,8 @@ model:
   attn_implementation: "eager"
 
 lora:
-  r: 16
-  lora_alpha: 32
+  r: 8
+  lora_alpha: 16
   target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
   lora_dropout: 0.05
   bias: "none" # sticking to example : https://huggingface.co/docs/trl/main/en/peft_integration
@@ -13,13 +13,13 @@ lora:
 
 generation:
   min_length: 0
-  max_new_tokens: 500
+  max_new_tokens: 1000
   # max_new_tokens: 400
-  do_sample: true
-  temperature: 0.7
-  top_p: 1.0
+  do_sample: false
+  # temperature: 0.7
+  # top_p: 1.0
   # do_sample: false
-  top_k: 0.0
+  # top_k: 0.0
   # num_beams: 1
   # temperature: 1.0
   # pad_token_id: 0

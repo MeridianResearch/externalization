@@ -25,24 +25,66 @@ def extract_solution(solution_str, method="strict"):
                     break
     return final_answer
 
-def check_format_violations(completion_text):
-    penalty = 0.0
+# def check_format_violations(completion_text):
+#     penalty = 0.0
     
-    hash_count = completion_text.count("####") #check for multiple #### 
-    if hash_count > 1:
-        penalty += 0.1
+#     hash_count = completion_text.count("####") #check for multiple #### 
+#     if hash_count > 1:
+#         penalty += 0.1
     
-    final_hash_match = re.search(r"#### (\\-?[0-9\\.\\,]+)(.+)", completion_text, re.DOTALL) #check for text after final #### answer
-    if final_hash_match:
-        text_after = final_hash_match.group(2).strip()
-        if text_after:
-            penalty += 0.1
+#     final_hash_match = re.search(r"#### (\\-?[0-9\\.\\,]+)(.+)", completion_text, re.DOTALL) #check for text after final #### answer
+#     if final_hash_match:
+#         text_after = final_hash_match.group(2).strip()
+#         if text_after:
+#             penalty += 0.1
     
-    malformed_hash = re.findall(r"#### (?![0-9\\-])", completion_text) #check for #### with no number after
-    if malformed_hash:
-        penalty += 0.1
+#     malformed_hash = re.findall(r"#### (?![0-9\\-])", completion_text) #check for #### with no number after
+#     if malformed_hash:
+#         penalty += 0.1
     
-    return penalty
+#     return penalty
+
+# def compute_verification_rewards(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):
+
+#     rewards = torch.zeros(len(completions_text), dtype=torch.float32)
+    
+#     for i, full_completion_text in enumerate(completions_text):
+#         completion_tokens = completions_tokens[i][input_prompt_length:] #remove prompt
+#         completion_text = tokenizer.decode(completion_tokens, skip_special_tokens=True) #tokens to text
+
+#         ground_truth_idx = i // len(correct_answers) if len(correct_answers) > 1 else 0
+#         ground_truth = str(correct_answers[ground_truth_idx])
+        
+#         if "#### " in ground_truth:
+#             answer_match = re.search(r"#### (.+)", ground_truth)
+#             if answer_match:
+#                 ground_truth = answer_match.group(1).strip().replace(",", "").replace("$", "")
+        
+#         extracted_answer = extract_solution(completion_text, method="strict")
+#         extracted_answer_flexible = extract_solution(completion_text, method="flexible")
+
+#         format_penalty = check_format_violations(completion_text)
+        
+#         if extracted_answer is not None and extracted_answer == ground_truth:
+#             rewards[i] = 1.0 - format_penalty #full reward minus any format penalties
+#         elif extracted_answer_flexible is not None and extracted_answer_flexible == ground_truth:
+#             rewards[i] = 0.5  #penalize misformatted outputs
+#         elif extracted_answer is None:
+#             rewards[i] = -1.0  #extra penalty for wrong format and no answer
+#         else:
+#             rewards[i] = 0.0 - format_penalty #wrong answer but correct format
+    
+#     return rewards
+
+def extract_last_number(text: str) -> str | None:
+    """
+    Extract the last number (int or float, with optional minus sign)
+    that appears anywhere in the text.
+    Returns None if no numbers are found.
+    """
+    numbers = re.findall(r"-?\d+(?:\.\d+)?", text)
+    return numbers[-1] if numbers else None
+
 
 def compute_verification_rewards(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):
 
@@ -60,20 +102,13 @@ def compute_verification_rewards(completions_tokens, completions_text, correct_a
             if answer_match:
                 ground_truth = answer_match.group(1).strip().replace(",", "").replace("$", "")
         
-        extracted_answer = extract_solution(completion_text, method="strict")
-        extracted_answer_flexible = extract_solution(completion_text, method="flexible")
+        extracted_answer = extract_last_number(completion_text)
 
-        format_penalty = check_format_violations(completion_text)
-        
-        if extracted_answer is not None and extracted_answer == ground_truth:
-            rewards[i] = 1.0 - format_penalty #full reward minus any format penalties
-        elif extracted_answer_flexible is not None and extracted_answer_flexible == ground_truth:
-            rewards[i] = 0.5  #penalize misformatted outputs
-        elif extracted_answer is None:
-            rewards[i] = -1.0  #extra penalty for wrong format and no answer
+        if extracted_answer == ground_truth:
+            rewards[i] = 1.0
         else:
-            rewards[i] = 0.0 - format_penalty #wrong answer but correct format
-    
+            rewards[i] = -1.0
+
     return rewards
 
 def compute_next_token_logprobs_from_logits(logits, tokens):
