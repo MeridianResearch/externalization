@@ -208,9 +208,10 @@ def compute_token_logprobs_reference(model, tokens, input_prompt_length):
             containing log p_ref(y_t | y_<t, x) for the generated tokens.
     """
     # raise NotImplementedError("TODO: implement compute_token_logprobs_reference")
-    outputs = model(tokens) # [batch * samples, full length, vocabulary]
-    next_token_logprobs = compute_next_token_logprobs_from_logits(outputs['logits'], tokens)
-    reference_generated_ntp_logprobs = next_token_logprobs[:, input_prompt_length-1:] # the input_promt_length -1 is to capture all the generated tokens, not a trivial thing
+    with torch.no_grad():
+        outputs = model(tokens) # [batch * samples, full length, vocabulary]
+        next_token_logprobs = compute_next_token_logprobs_from_logits(outputs['logits'], tokens)
+        reference_generated_ntp_logprobs = next_token_logprobs[:, input_prompt_length-1:] # the input_promt_length -1 is to capture all the generated tokens, not a trivial thing
     return reference_generated_ntp_logprobs
 
 

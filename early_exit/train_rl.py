@@ -199,16 +199,18 @@ def main_rl_training():
         )
 
         # 3) Reward components
-        verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
-        kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs, generated_attention_mask)
-        avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
+        with torch.no_grad():
+            verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
+            kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs, generated_attention_mask)
+            avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
 
         # 3.1) Compute sample labels (similar to format_accuracy/answer_accuracy in reference)
-        sample_labels = compute_sample_labels(verify)
+        with torch.no_grad():
+            sample_labels = compute_sample_labels(verify)
 
-        difficulty_categories = [difficulty_category] * RL_HPARAMS.k
-        #compute accuracy metrics by difficulty (all samples have same difficulty as same prompt)
-        difficulty_accuracies = compute_accuracy_by_difficulty(verify, difficulty_categories)
+            difficulty_categories = [difficulty_category] * RL_HPARAMS.k
+            #compute accuracy metrics by difficulty (all samples have same difficulty as same prompt)
+            difficulty_accuracies = compute_accuracy_by_difficulty(verify, difficulty_categories)
 
         # import ipdb; ipdb.set_trace()
         # 4) Total reward per sequence (simple linear combination)
@@ -222,7 +224,8 @@ def main_rl_training():
         normalized_advantages = advantages / adv_std
         
         # 6) Weighted SFT update
-        sampled_early_exit_layer_idxs_early = map_layers_to_indices(prescribed_exit_layers, student.exitable_layer_idxs).to(device)
+        with torch.no_grad():
+            sampled_early_exit_layer_idxs_early = map_layers_to_indices(prescribed_exit_layers, student.exitable_layer_idxs).to(device)
         student_sampled_exit_logprobs = student_early_exit_logprobs.gather(
             index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).squeeze(-1)
         
