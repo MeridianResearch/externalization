@@ -58,6 +58,8 @@ def main_rl_training():
     optimizer = Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5)
     # we use https://huggingface.co/docs/trl/rloo_trainer  as an inspiration for logging. 
 
+    global_training_step = 0
+
     run = wandb.init(
         project="early-exit-RL-test",
         entity="vkarthik095-university-of-amsterdam",
@@ -236,6 +238,7 @@ def main_rl_training():
 
 
             # 7) Logging (schema)
+            global_training_step += 1
             torch.cuda.empty_cache()
             with torch.no_grad():
                 tokens_tensor = completions['tokens']  # [batch*K, seq_len]
@@ -267,7 +270,7 @@ def main_rl_training():
     
                     # Training advantage
                     'training/lr': optimizer.param_groups[0]['lr'],
-                    'training/episode': i,
+                    'training/episode': global_training_step,
                     'training/loss': float(loss.item() if hasattr(loss, 'item') else loss),
                     # 'training/advantage_mean': advantages.mean().item(),
                     'training/advantage_std': advantages.std(unbiased=False).item(),
@@ -350,7 +353,7 @@ def main_rl_training():
                         coherence_result = coherence_batch_results[row_idx]
     
                         table_history.append([
-                            i,
+                            global_training_step,
                             prompt,
                             completions['texts'][row_idx],
                             extract_solution(correct_answer),
