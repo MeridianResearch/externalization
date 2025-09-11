@@ -24,9 +24,10 @@ from torch.nn.utils.rnn import pad_sequence
 device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
-sft_model_path = "models/early_exit_20250906_layers_5_big"  # TODO: set path to SFT checkpoint
+sft_model_path = "models/early_exit_20250908_layers_5_big"  # TODO: set path to SFT checkpoint
 
 RL_HPARAMS = RLHyperparams()
+training_steps_per_rollout = 4
 
 
 # --- Models (schema) ---
@@ -45,7 +46,6 @@ reference.eval()
 # TODO: ensure no early-exit logic is active for reference model
 
 # Dataset
-#dataset = load_dataset("gsm8k", "main")  # TODO: verify/parse answer format
 dataset = load_gsm8k_with_difficulty()
 
 
@@ -96,11 +96,6 @@ def main_rl_training():
                 'completions/clipped_ratio': 'Fraction of sequences without an EOS token (likely due to max-length clipping).',
                 'completions/num_eos_tokens': 'Total number of EOS tokens observed across the batch.',
                 # Accuracy metrics (overall and by difficulty)
-                #'accuracy/correct_rate': 'Fraction of samples with perfect correctness (reward = 1.0).',
-                #'accuracy/partial_rate': 'Fraction of samples with partial correctness (reward = 0.5).',
-                #'accuracy/incorrect_rate': 'Fraction of samples with incorrect answers (reward = 0.0).',
-                #'accuracy/format_error_rate': 'Fraction of samples with format errors (reward = -1.0).',
-                #'accuracy/good_format_rate': 'Fraction of samples with proper "####" format.',
                 'accuracy/answer_accuracy': 'Overall fraction of samples with correct and properly formatted answers.',
                 'accuracy/format_accuracy': 'Overall fraction of samples with proper format.',
                 'accuracy/easy_answer_accuracy': 'Answer accuracy for Easy difficulty problems.',
@@ -147,15 +142,8 @@ def main_rl_training():
 
     for i, example in enumerate(train_dataset):
 
-
         prompt = example["question"]
         correct_answer = example["answer"]
-
-        # difficulty_info = difficulty_lookup.get(prompt, {
-        #     'solved_percentage': None,
-        #     'difficulty_category': 'Unknown'
-        # })
-        # difficulty_category = difficulty_info['difficulty_category']
         difficulty_category = example['difficulty_category']
 
         # 1) Rollouts (student free-generate K)
@@ -172,211 +160,225 @@ def main_rl_training():
         # 2) Log-probs for KL and rewards (reference vs student)  # TODO: confirm scoring design
         ref_logprobs = compute_token_logprobs_reference(reference, 
                                                         completions['tokens'],
-                                                        input_prompt_length)  # TODO
+                                                        input_prompt_length)
         prescribed_exit_layers = pad_sequence(exit_info['prescribed_exit_layers'], batch_first=True, padding_value=torch.inf)
-        stu_logprobs, student_early_exit_logprobs = compute_token_logprobs_student(student, 
-                                                      completions['tokens'], 
-                                                      prescribed_exit_layers=prescribed_exit_layers,
-                                                      input_prompt_length=input_prompt_length)  # TODO
-        
-        # import ipdb; ipdb.set_trace()
-        stu_logprobs = apply_masking(stu_logprobs, completions['tokens'], input_prompt_length, tokenizer.pad_token_id)
-        student_early_exit_logprobs = apply_masking(student_early_exit_logprobs, completions['tokens'], input_prompt_length, 
-                                                 tokenizer.pad_token_id, mode = 'early_exit_probs')
-        ref_logprobs = apply_masking(ref_logprobs, completions['tokens'], input_prompt_length, tokenizer.pad_token_id)
-        # Runtime validation of rollout tensors (dtype/shape checks)
-        _ = RolloutBatch(
-            tokens=completions['tokens'],
-            texts=completions['texts'],
-            ref_logprobs=ref_logprobs,
-            stu_logprobs=stu_logprobs,
-            # prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None),
-            prescribed_exit_layers=prescribed_exit_layers,
-            input_prompt_length=input_prompt_length,
-            student_early_exit_logprobs=student_early_exit_logprobs
-            #avg_exit_layer=exit_info.get('avg_exit_layer', None), #calced in rewards later
-        )
 
-        # 3) Reward components
+        # 3) Reward components (computed once per rollout)
         verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
-        kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs, generated_attention_mask)
         avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
 
-        # 3.1) Compute sample labels (similar to format_accuracy/answer_accuracy in reference)
+        # 3.1) Compute sample labels
         sample_labels = compute_sample_labels(verify)
 
         difficulty_categories = [difficulty_category] * RL_HPARAMS.k
         #compute accuracy metrics by difficulty (all samples have same difficulty as same prompt)
         difficulty_accuracies = compute_accuracy_by_difficulty(verify, difficulty_categories)
 
-        # import ipdb; ipdb.set_trace()
-        # 4) Total reward per sequence (simple linear combination)
-        reward = verify.to(device) - RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)  # TODO: tune weights, consider normalization
-
-        # 5) Centering per prompt
-        advantages = center_rewards_per_prompt(reward, batch_size=1, k=RL_HPARAMS.k)
-        # Normalize advantages by their standard deviation to stabilize learning
-        adv_std = advantages.std(unbiased=False) + 1e-8
-        #adv_std = 1.
-        normalized_advantages = advantages / adv_std
-        
-        # 6) Weighted SFT update
+        # Pre-compute data that doesn't change between training steps
         with torch.no_grad():
             sampled_early_exit_layer_idxs_early = map_layers_to_indices(prescribed_exit_layers, student.exitable_layer_idxs).to(device)
-        student_sampled_exit_logprobs = student_early_exit_logprobs.gather(
-            index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).squeeze(-1)
-        
-        # import ipdb; ipdb.set_trace()
-        loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, normalized_advantages, generated_attention_mask, optimizer, RL_HPARAMS)  # TODO
-        # 7) Logging (schema)
-        torch.cuda.empty_cache()
-        with torch.no_grad():
-            tokens_tensor = completions['tokens']  # [batch*K, seq_len]
-            pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else -1
-            eos_id = tokenizer.eos_token_id if tokenizer.eos_token_id is not None else -1
+        ref_logprobs = apply_masking(ref_logprobs, completions['tokens'], input_prompt_length, tokenizer.pad_token_id)
 
-            seq_lens = (tokens_tensor != pad_id).sum(dim=1).float()
-            generated_lens = seq_lens - input_prompt_length
-            contains_eos = (tokens_tensor == eos_id).any(dim=1) if eos_id != -1 else torch.zeros_like(seq_lens, dtype=torch.bool)
-            clipped_ratio = 1.0 - contains_eos.float().mean().item()
-            num_eos_tokens = int((tokens_tensor == eos_id).sum().item()) if eos_id != -1 else 0
+        for training_step in range(training_steps_per_rollout):
+            # Compute current student logprobs (these change after each training step)
+            stu_logprobs, student_early_exit_logprobs = compute_token_logprobs_student(student, 
+                                                          completions['tokens'], 
+                                                          prescribed_exit_layers=prescribed_exit_layers,
+                                                          input_prompt_length=input_prompt_length)  # TODO
+            
+            stu_logprobs = apply_masking(stu_logprobs, completions['tokens'], input_prompt_length, tokenizer.pad_token_id)
+            student_early_exit_logprobs = apply_masking(student_early_exit_logprobs, completions['tokens'], input_prompt_length, 
+                                                     tokenizer.pad_token_id, mode = 'early_exit_probs')
 
-            log_dict = {
-                # Objective metrics
-                'objective/rlhf_reward': reward.mean().item(),
-                'objective/kl': kl_tokens.mean().item(),
-                'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
-                
-                # Exit metrics
-                'exit/min_layer': avg_exit_layer.min().item(),
-                'exit/max_layer': avg_exit_layer.max().item(),
-                'exit/avg_layer': avg_exit_layer.mean().item(),
-                'exit/std_layer': avg_exit_layer.std(unbiased=False).item(),
-                
-                # Reward components
-                'rewards/verify_mean': verify.mean().item(),
-                'rewards/kl_penalty_component_mean': (RL_HPARAMS.beta_kl * kl_tokens).mean().item(),
-                'rewards/exit_layer_penalty_component_mean': (RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
+            if training_step == 0:
+                first_step_stu_logprobs = stu_logprobs.clone()
+                first_step_student_early_exit_logprobs = student_early_exit_logprobs.clone()
 
-                # Training advantage
-                'training/lr': optimizer.param_groups[0]['lr'],
-                'training/episode': i,
-                'training/loss': float(loss.item() if hasattr(loss, 'item') else loss),
-                # 'training/advantage_mean': advantages.mean().item(),
-                'training/advantage_std': advantages.std(unbiased=False).item(),
-                'training/total_neg_logprobs_mean': -(stu_logprobs.mean().item() + student_sampled_exit_logprobs.mean().item()),
-                
-                # Logprobs Mean
-                'neg_logprobs/total': -(stu_logprobs.mean().item() + student_sampled_exit_logprobs.mean().item()),
-                'neg_logprobs/prediction': -stu_logprobs.mean().item(),
-                'neg_logprobs/exit': -student_sampled_exit_logprobs.mean().item(),
+            # Runtime validation of rollout tensors (dtype/shape checks)
+            _ = RolloutBatch(
+                tokens=completions['tokens'],
+                texts=completions['texts'],
+                ref_logprobs=ref_logprobs,
+                stu_logprobs=stu_logprobs,
+                # prescribed_exit_layers=exit_info.get('prescribed_exit_layers', None),
+                prescribed_exit_layers=prescribed_exit_layers,
+                input_prompt_length=input_prompt_length,
+                student_early_exit_logprobs=student_early_exit_logprobs
+                #avg_exit_layer=exit_info.get('avg_exit_layer', None), #calced in rewards later
+            )
+            
+            student_sampled_exit_logprobs = student_early_exit_logprobs.gather(
+                index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).squeeze(-1)
 
-                # Completions
-                'completions/mean_length': generated_lens.mean().item(),
-                'completions/min_length': generated_lens.min().item(),
-                'completions/max_length': generated_lens.max().item(),
-                'completions/clipped_ratio': clipped_ratio,
-                'completions/num_eos_tokens': num_eos_tokens,
+            # Compute current KL (this changes as student changes)
+            kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs, generated_attention_mask)
 
-                # Accuracy metrics (similar to format_accuracy/answer_accuracy in reference)
-                #'accuracy/correct_rate': sample_labels['stats']['correct_rate'],
-                #'accuracy/partial_rate': sample_labels['stats']['partial_rate'],
-                #'accuracy/incorrect_rate': sample_labels['stats']['incorrect_rate'],
-                #'accuracy/format_error_rate': sample_labels['stats']['format_error_rate'],
-                #'accuracy/good_format_rate': sample_labels['stats']['good_format_rate'],
-                'accuracy/answer_accuracy': sample_labels['stats']['answer_accuracy'],
-                'accuracy/format_accuracy': sample_labels['stats']['format_accuracy'],
-            }
+            # 4) Total reward per sequence (simple linear combination)
+            reward = verify.to(device) - RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)  # TODO: tune weights, consider normalization
 
-            for key, value in difficulty_accuracies.items():
-                log_dict[f'accuracy/{key}'] = value #add difficulty accuracies to log dict
+            # 5) Centering per prompt
+            advantages = center_rewards_per_prompt(reward, batch_size=1, k=RL_HPARAMS.k)
+            # Normalize advantages by their standard deviation to stabilize learning
+            adv_std = advantages.std(unbiased=False) + 1e-8
+            normalized_advantages = advantages / adv_std
 
-            # Periodic sample generations table
-            if (i % RL_HPARAMS.sample_log_interval) == 0:
-                num_rows = min(len(completions['texts']), RL_HPARAMS.sample_max_rows)
+            first_step_student_sampled_exit_logprobs = first_step_student_early_exit_logprobs.gather(
+                index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).squeeze(-1)
+            
+            #Probability ratio: new / old (1.0 for step 0)
+            ratio = (stu_logprobs - first_step_stu_logprobs).exp()
+            
+            final_advantages = normalized_advantages * ratio.mean(dim=1)
+            
+            # 6) Weighted SFT update
+            #loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, normalized_advantages, generated_attention_mask, optimizer, RL_HPARAMS)
+            loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, final_advantages, generated_attention_mask, optimizer, RL_HPARAMS)
 
-                async def evaluate_batch_coherence():
-                    tasks = []
-                    for row_idx in range(num_rows):
-                        task = evaluate_coherence(prompt, completions['texts'][row_idx])
-                        tasks.append(task)
-                    
-                    results = await asyncio.gather(*tasks)
-                    return results
-                
-                coherence_batch_results = asyncio.run(evaluate_batch_coherence())
 
-                avg_coherence = sum(r['coherence'] for r in coherence_batch_results) / len(coherence_batch_results)
-                avg_completeness = sum(r['completeness'] for r in coherence_batch_results) / len(coherence_batch_results)
-                avg_clarity = sum(r['clarity'] for r in coherence_batch_results) / len(coherence_batch_results)
-                avg_no_repetition = sum(r['no_repetition'] for r in coherence_batch_results) / len(coherence_batch_results)
-                avg_overall = sum(r['average'] for r in coherence_batch_results) / len(coherence_batch_results)
+            # 7) Logging (schema)
+            torch.cuda.empty_cache()
+            with torch.no_grad():
+                tokens_tensor = completions['tokens']  # [batch*K, seq_len]
+                pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else -1
+                eos_id = tokenizer.eos_token_id if tokenizer.eos_token_id is not None else -1
     
-                log_dict.update({
-                    'coherence/batch_coherence': avg_coherence,
-                    'coherence/batch_completeness': avg_completeness,
-                    'coherence/batch_clarity': avg_clarity,
-                    'coherence/batch_no_repetition': avg_no_repetition,
-                    'coherence/batch_average': avg_overall,
-                })
-
-                columns = [
-                    'episode',
-                    'samples/prompt_text',
-                    'samples/completion_text',
-                    'samples/correct_answer',
-                    'samples/difficulty_category',
-                    'samples/verify_reward',
-                    'samples/kl_estimate',
-                    'samples/avg_exit_layer',
-                    'samples/gen_len',
-                    'samples/contains_eos',
-                    'samples/selection_index',
-                    'samples/correctness_label',
-                    'samples/format_label',
-                    'samples/coherence_coherence',
-                    'samples/coherence_completeness',
-                    'samples/coherence_clarity',
-                    'samples/coherence_no_repetition',
-                    'samples/coherence_average',
-                    'samples/coherence_explanation',
-                ]
-                for row_idx in range(num_rows):
-                    full_len = int(seq_lens[row_idx].item())
-                    gen_len = max(0, full_len - int(input_prompt_length))
-
-                    coherence_result = coherence_batch_results[row_idx]
-
-                    table_history.append([
-                        i,
-                        prompt,
-                        completions['texts'][row_idx],
-                        extract_solution(correct_answer),
-                        difficulty_category,
-                        float(verify[row_idx].item()),
-                        float(kl_tokens[row_idx].item()),
-                        float(avg_exit_layer[row_idx].item()),
-                        int(gen_len),
-                        bool(contains_eos[row_idx].item()),
-                        int(row_idx),
-                        sample_labels['labels'][row_idx]['correctness'],
-                        sample_labels['labels'][row_idx]['format_quality'],
-                        int(coherence_result['coherence']),
-                        int(coherence_result['completeness']),
-                        int(coherence_result['clarity']),
-                        int(coherence_result['no_repetition']),
-                        float(coherence_result['average']),
-                        coherence_result['explanation']
-                    ])
-
-                table = wandb.Table(columns=columns)
-                for row in table_history:
-                    table.add_data(*row)
-                log_dict['samples/generations'] = table
-                # log_dict['samples/selection_policy'] = 'first'
-                # log_dict['samples/selection_count'] = num_rows
-
-            wandb.log(log_dict)
+                seq_lens = (tokens_tensor != pad_id).sum(dim=1).float()
+                generated_lens = seq_lens - input_prompt_length
+                contains_eos = (tokens_tensor == eos_id).any(dim=1) if eos_id != -1 else torch.zeros_like(seq_lens, dtype=torch.bool)
+                clipped_ratio = 1.0 - contains_eos.float().mean().item()
+                num_eos_tokens = int((tokens_tensor == eos_id).sum().item()) if eos_id != -1 else 0
+    
+                log_dict = {
+                    # Objective metrics
+                    'objective/rlhf_reward': reward.mean().item(),
+                    'objective/kl': kl_tokens.mean().item(),
+                    'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
+                    
+                    # Exit metrics
+                    'exit/min_layer': avg_exit_layer.min().item(),
+                    'exit/max_layer': avg_exit_layer.max().item(),
+                    'exit/avg_layer': avg_exit_layer.mean().item(),
+                    'exit/std_layer': avg_exit_layer.std(unbiased=False).item(),
+                    
+                    # Reward components
+                    'rewards/verify_mean': verify.mean().item(),
+                    'rewards/kl_penalty_component_mean': (RL_HPARAMS.beta_kl * kl_tokens).mean().item(),
+                    'rewards/exit_layer_penalty_component_mean': (RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
+    
+                    # Training advantage
+                    'training/lr': optimizer.param_groups[0]['lr'],
+                    'training/episode': i,
+                    'training/loss': float(loss.item() if hasattr(loss, 'item') else loss),
+                    # 'training/advantage_mean': advantages.mean().item(),
+                    'training/advantage_std': advantages.std(unbiased=False).item(),
+                    'training/total_neg_logprobs_mean': -(stu_logprobs.mean().item() + student_sampled_exit_logprobs.mean().item()),
+                    
+                    # Logprobs Mean
+                    'neg_logprobs/total': -(stu_logprobs.mean().item() + student_sampled_exit_logprobs.mean().item()),
+                    'neg_logprobs/prediction': -stu_logprobs.mean().item(),
+                    'neg_logprobs/exit': -student_sampled_exit_logprobs.mean().item(),
+    
+                    # Completions
+                    'completions/mean_length': generated_lens.mean().item(),
+                    'completions/min_length': generated_lens.min().item(),
+                    'completions/max_length': generated_lens.max().item(),
+                    'completions/clipped_ratio': clipped_ratio,
+                    'completions/num_eos_tokens': num_eos_tokens,
+    
+                    # Accuracy metrics (similar to format_accuracy/answer_accuracy in reference)
+                    'accuracy/answer_accuracy': sample_labels['stats']['answer_accuracy'],
+                    'accuracy/format_accuracy': sample_labels['stats']['format_accuracy'],
+                }
+    
+                for key, value in difficulty_accuracies.items():
+                    log_dict[f'accuracy/{key}'] = value #add difficulty accuracies to log dict
+    
+                # Periodic sample generations table
+                if (i % RL_HPARAMS.sample_log_interval) == 0:
+                    num_rows = min(len(completions['texts']), RL_HPARAMS.sample_max_rows)
+    
+                    async def evaluate_batch_coherence():
+                        tasks = []
+                        for row_idx in range(num_rows):
+                            task = evaluate_coherence(prompt, completions['texts'][row_idx])
+                            tasks.append(task)
+                        
+                        results = await asyncio.gather(*tasks)
+                        return results
+                    
+                    coherence_batch_results = asyncio.run(evaluate_batch_coherence())
+    
+                    avg_coherence = sum(r['coherence'] for r in coherence_batch_results) / len(coherence_batch_results)
+                    avg_completeness = sum(r['completeness'] for r in coherence_batch_results) / len(coherence_batch_results)
+                    avg_clarity = sum(r['clarity'] for r in coherence_batch_results) / len(coherence_batch_results)
+                    avg_no_repetition = sum(r['no_repetition'] for r in coherence_batch_results) / len(coherence_batch_results)
+                    avg_overall = sum(r['average'] for r in coherence_batch_results) / len(coherence_batch_results)
+        
+                    log_dict.update({
+                        'coherence/batch_coherence': avg_coherence,
+                        'coherence/batch_completeness': avg_completeness,
+                        'coherence/batch_clarity': avg_clarity,
+                        'coherence/batch_no_repetition': avg_no_repetition,
+                        'coherence/batch_average': avg_overall,
+                    })
+    
+                    columns = [
+                        'episode',
+                        'samples/prompt_text',
+                        'samples/completion_text',
+                        'samples/correct_answer',
+                        'samples/difficulty_category',
+                        'samples/verify_reward',
+                        'samples/kl_estimate',
+                        'samples/avg_exit_layer',
+                        'samples/gen_len',
+                        'samples/contains_eos',
+                        'samples/selection_index',
+                        'samples/correctness_label',
+                        'samples/format_label',
+                        'samples/coherence_coherence',
+                        'samples/coherence_completeness',
+                        'samples/coherence_clarity',
+                        'samples/coherence_no_repetition',
+                        'samples/coherence_average',
+                        'samples/coherence_explanation',
+                    ]
+                    for row_idx in range(num_rows):
+                        full_len = int(seq_lens[row_idx].item())
+                        gen_len = max(0, full_len - int(input_prompt_length))
+    
+                        coherence_result = coherence_batch_results[row_idx]
+    
+                        table_history.append([
+                            i,
+                            prompt,
+                            completions['texts'][row_idx],
+                            extract_solution(correct_answer),
+                            difficulty_category,
+                            float(verify[row_idx].item()),
+                            float(kl_tokens[row_idx].item()),
+                            float(avg_exit_layer[row_idx].item()),
+                            int(gen_len),
+                            bool(contains_eos[row_idx].item()),
+                            int(row_idx),
+                            sample_labels['labels'][row_idx]['correctness'],
+                            sample_labels['labels'][row_idx]['format_quality'],
+                            int(coherence_result['coherence']),
+                            int(coherence_result['completeness']),
+                            int(coherence_result['clarity']),
+                            int(coherence_result['no_repetition']),
+                            float(coherence_result['average']),
+                            coherence_result['explanation']
+                        ])
+    
+                    table = wandb.Table(columns=columns)
+                    for row in table_history:
+                        table.add_data(*row)
+                    log_dict['samples/generations'] = table
+                    # log_dict['samples/selection_policy'] = 'first'
+                    # log_dict['samples/selection_count'] = num_rows
+    
+                wandb.log(log_dict)
 
     wandb.finish()
 
