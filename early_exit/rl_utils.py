@@ -8,6 +8,7 @@ from early_exit.patching import set_transformer_early_exit_mode
 from shared_utils.generate import generate_text
 from typing import List
 
+from shared_utils.generate import format_conversation, full_tokenize
 from early_exit.rl_types import *
 
 from shared_utils.generate import generate_text
@@ -38,19 +39,22 @@ def generate_k_completions(model, prompt, k: int, tokenizer, config, device, sys
     all_prescribed_exit_layers = []
     
     for p in prompt:
+        # Cache the processed prompt outside the K completions loop
+        pre_transformed_conversation = format_conversation(user_prompts=[p], system_prompt=system_prompt)
+        full_prompts = tokenizer.apply_chat_template(pre_transformed_conversation, 
+                                                     prefiller='',
+                                                     tokenize=False,
+                                                     add_generation_prompt=True)
+        inputs = full_tokenize(prompts=full_prompts, tokenizer=tokenizer, device=device, add_special_tokens=False)
+        
         for _ in range(k):
             with torch.no_grad():
-                decoded_response, model_outputs = generate_text(
-                    model=model,
-                    prompt=p,
-                    system_prompt=system_prompt,
-                    prefiller='',
-                    tokenizer=tokenizer,
-                    generation_config=config['generation'],
-                    device=device
-                )
+                # Use the cached processed inputs directly - no repeated string processing
+                print('prompt tokens shape:', inputs['input_ids'].shape)
+                all_model_outputs = model.generate(**inputs, **config['generation'])
+                decoded_response = tokenizer.decode(all_model_outputs[0].squeeze())
 
-            sequences, exit_layer_idxs = model_outputs
+            sequences, exit_layer_idxs = all_model_outputs
             tokens = sequences[0]
             prescribed_exit_layers = exit_layer_idxs[0]
             

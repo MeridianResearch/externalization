@@ -12,6 +12,9 @@ from typing import Optional
 import asyncio
 import pandas as pd
 
+import sys
+sys.path.append("../")
+
 from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json
 from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty
 from early_exit.rl_types import RLHyperparams, RolloutBatch
@@ -20,10 +23,11 @@ from early_exit.patching import replace_attention_layers, set_transformer_early_
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from torch.nn.utils.rnn import pad_sequence
 
+import torch
 
 device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
-config_path = "config_deepseek.yaml"
+config_path = "../config_deepseek.yaml"
 sft_model_path = "models/early_exit_20250906_layers_5_big"  # TODO: set path to SFT checkpoint
 
 RL_HPARAMS = RLHyperparams()
@@ -36,8 +40,8 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
 # TODO: Change artifact path to sft trained gsm-8k model
-#student = load_model_from_wandb(student, model_path = "models/trained_model_v0", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
-student = load_model(student, sft_model_path)
+student = load_model_from_wandb(student, model_path = "models/trained_model_v0", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
+#student = load_model(student, sft_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
