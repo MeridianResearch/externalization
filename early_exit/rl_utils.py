@@ -14,8 +14,16 @@ from shared_utils.generate import generate_text
 
 import asyncio
 from inspect_ai.model import get_model as get_inspect_model
+from shared_utils.generate import format_conversation
+
+def compute_mean_wth_mask(input_tensor, mask):
+    assert input_tensor.dim() == 2, "Input tensor to compute mean with mask should be a 2D tensor."
+    assert mask.dim() == 2, "Mask to compute mean with mask should be a 2D tensor."
+    assert input_tensor.shape == mask.shape, "Input tensor and mask should be of same shape."
+    return input_tensor.sum(-1)/mask.sum(-1)
 
 # ---------------- RL helper functions moved from train_rl.py ----------------
+@torch.no_grad()
 def generate_k_completions(model, prompt, k: int, tokenizer, config, device, system_prompt):
     """
     Free-generate K completions per prompt with early exits enabled.
@@ -84,7 +92,7 @@ def generate_k_completions(model, prompt, k: int, tokenizer, config, device, sys
     
     return completions, exit_info
 
-
+@torch.no_grad()
 def center_rewards_per_prompt(rewards, batch_size: int, k: int):
     """
     Center rewards across the K completions for each prompt (simple baseline).
@@ -107,7 +115,7 @@ def compute_sequence_mean_loglik_student(student_log_likelihoods, student_early_
     student_log_likelihoods = {student_log_likelihoods.shape}"
     assert student_log_likelihoods.shape == student_early_exit_logprobs.shape, "Student log likelihoods and logprobs should have same shapes"
     assert student_log_likelihoods.shape == attention_mask.shape, "Student log likelihoods and attention mask should have same shapes"
-    return (student_log_likelihoods.sum(-1) + student_early_exit_logprobs.sum(-1))/attention_mask.sum(-1)
+    return compute_mean_wth_mask(student_log_likelihoods + student_early_exit_logprobs, attention_mask)
 
 
 def weighted_rloo_loss(advantages, log_likelihoods, RL_HPARAMS):
@@ -142,8 +150,6 @@ def weighted_sft_step(student_log_likelihoods, student_early_exit_logprobs, adva
 
 
 def get_input_prompt_length(tokenizer, prompt, system_prompt):
-    from shared_utils.generate import format_conversation, transform_conversations, full_tokenize
-    
     pre_transformed_conversation = format_conversation(user_prompts = [prompt], system_prompt=system_prompt)
     tokens = tokenizer.apply_chat_template(pre_transformed_conversation, 
                                            tokenize=True,

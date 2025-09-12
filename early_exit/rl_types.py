@@ -20,7 +20,7 @@ class RLHyperparams:
     """
     batch_size: int = 1
     k: int = 4  
-    beta_kl: float = 0.1
+    beta_kl: float = 0.05
     lambda_exit: float = 0.5
     sample_log_interval: int = 25
     sample_max_rows: int = 2
@@ -28,6 +28,12 @@ class RLHyperparams:
     sample_log_seed: Optional[int] = None
     system_prompt: Optional[str] = "I am going to give you a math word problem. Solve it step by step, showing your reasoning. After your work, provide your final numerical answer"
     SAVE_EVERY_HOURS: int = 5
+    REWARD_CORRECT: float = 1.0
+    start_epoch: int = 0
+    lr_lora: float = 1e-4,
+    lr_exit: float = 1e-5,
+    SAVE_MODEL: bool = False,
+    max_new_tokens: int = 900
 
 @dataclass
 class RolloutBatch:

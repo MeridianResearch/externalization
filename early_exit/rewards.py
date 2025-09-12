@@ -2,6 +2,8 @@ import re
 import torch
 from torch import Tensor as _T
 
+from early_exit.rl_utils import compute_mean_wth_mask
+
 def extract_solution(solution_str, method="strict"):
     assert method in ["strict", "flexible"]
     if method == "strict":
@@ -85,8 +87,8 @@ def extract_last_number(text: str) -> str | None:
     numbers = re.findall(r"-?\d+(?:\.\d+)?", text)
     return numbers[-1] if numbers else None
 
-
-def compute_verification_rewards(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):
+@torch.no_grad()
+def compute_verification_rewards(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer, correct_answer_reward):
 
     rewards = torch.zeros(len(completions_text), dtype=torch.float32)
     
@@ -105,12 +107,13 @@ def compute_verification_rewards(completions_tokens, completions_text, correct_a
         extracted_answer = extract_last_number(completion_text)
 
         if extracted_answer == ground_truth:
-            rewards[i] = 1.0
+            rewards[i] = correct_answer_reward
         else:
-            rewards[i] = -1.0
+            rewards[i] = 0.0
 
     return rewards
 
+# Needs GRAD!
 def compute_next_token_logprobs_from_logits(logits, tokens):
     """
     Given model logits and next tokens, compute log-probabilities of all the generated tokens.
@@ -141,6 +144,7 @@ def compute_next_token_logprobs_from_logits(logits, tokens):
 
     return next_token_logprobs
 
+# Needs GRAD!
 def compute_token_logprobs_student(model, tokens, prescribed_exit_layers, input_prompt_length):
     """
     Compute per-token log-probabilities under the student model for a sampled sequence.
@@ -164,6 +168,7 @@ def compute_token_logprobs_student(model, tokens, prescribed_exit_layers, input_
     student_early_exit_logprobs = (model.early_exit_student_probs(collected_exit_logits) + 1e-16).log() 
     return student_generated_token_logprobs, student_early_exit_logprobs
 
+@torch.no_grad()
 def compute_token_logprobs_reference(model, tokens, input_prompt_length):
     """
     Compute per-token log-probabilities under the reference model for a sampled sequence.
@@ -184,7 +189,7 @@ def compute_token_logprobs_reference(model, tokens, input_prompt_length):
     reference_generated_ntp_logprobs = next_token_logprobs[:, input_prompt_length-1:] # the input_promt_length -1 is to capture all the generated tokens, not a trivial thing
     return reference_generated_ntp_logprobs
 
-
+@torch.no_grad()
 def compute_token_kl_from_logprobs(student_generated_ntp_logprobs, reference_generated__ntp_logprobs, attention_mask):
     """
     Compute the average per-token KL-like divergence term between student and reference
@@ -203,10 +208,10 @@ def compute_token_kl_from_logprobs(student_generated_ntp_logprobs, reference_gen
     """
     logprobs_diff = student_generated_ntp_logprobs - reference_generated__ntp_logprobs
     assert logprobs_diff.shape == attention_mask.shape, "Log probs and attention mask should be of same shapes"
-    kl_estimate = logprobs_diff.sum(-1)/attention_mask.sum(-1)
+    kl_estimate = compute_mean_wth_mask(logprobs_diff, attention_mask)
     return kl_estimate
 
-    
+@torch.no_grad()
 def compute_avg_exit_layer(prescribed_exit_layers, model):
     """
     Extract/compute average exit layer per sequence from prescribed_exit_layers.

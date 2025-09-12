@@ -3,10 +3,10 @@
 
 - Flow: K rollouts per prompt → compute rewards (verify - beta*KL - lambda*avg_exit_layer) → center per-prompt → weighted SFT.
 """
-
+import os
 import time
 import torch
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
 import wandb
 from datasets import load_dataset
 from typing import Optional
@@ -14,25 +14,31 @@ import asyncio
 import pandas as pd
 
 from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json, save_model
-from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty
+from early_exit.rl_utils import apply_masking, compute_mean_wth_mask, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from torch.nn.utils.rnn import pad_sequence
+from pathlib import Path
 
 
 device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
-config_path = "config_greedy.yaml"
+## config_path = "config_greedy.yaml"
+config_path = "config_deepseek.yaml"
 sft_model_path = "models/gsm8k_old_school_1"  # TODO: set path to SFT checkpoint
 
 RL_HPARAMS = RLHyperparams(
                            sample_log_interval=1,
-                           sample_max_rows = 1,
-                           SAVE_EVERY_HOURS=5
-                           )
-
+                           sample_max_rows=4,
+                           SAVE_EVERY_HOURS=20,
+                           lambda_exit=0.,
+                           k = 5,
+                           max_new_tokens=1000,
+                           lr_lora = 1e-4,
+                           lr_exit = 1e-5
+                        )
 
 # --- Models (schema) ---
 tokenizer = get_tokenizer(model_name)
@@ -41,6 +47,7 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 adapter_config = configs_from_json(sft_model_path + "/early_exiter/adapter_config.json")
 config['lora']['r'] = adapter_config.get('r', config['lora']['r'])
 config['lora']['lora_alpha'] = adapter_config.get('lora_alpha', config['lora']['lora_alpha'])
+config['generation']['max_new_tokens'] = RL_HPARAMS.max_new_tokens
 
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
@@ -66,7 +73,33 @@ def main_rl_training():
     next_save_ts = time.time() + save_interval
     # TODO: optimizer (e.g., Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5))
     # Check if there are better optimizers for this problem
-    optimizer = Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5)
+    lora_params = []
+    exit_decision_params = []
+
+    for name, param in student.named_parameters():
+        if param.requires_grad:
+            if 'lora' in name:
+                lora_params.append(param)
+            elif 'early_exit_decision_weights' in name:
+                exit_decision_params.append(param)
+            else:
+                raise ValueError(f"Unknown trainable parameter: {name}. Expected 'lora' or 'early_exit_decision_weights' in name.")
+
+    # Calculate and print parameter counts
+    num_lora_params = sum(p.numel() for p in lora_params)
+    num_exit_params = sum(p.numel() for p in exit_decision_params)
+    total_trainable = num_lora_params + num_exit_params
+
+    print(f"LoRA parameters: {num_lora_params:,} ({len(lora_params)} tensors)")
+    print(f"Exit decision parameters: {num_exit_params:,} ({len(exit_decision_params)} tensors)")
+    print(f"Total trainable parameters: {total_trainable:,}")
+
+    # Create optimizer with different learning rates
+    optimizer = Adam([
+        {'params': lora_params, 'lr': RL_HPARAMS.lr_lora},  # LoRA learning rate
+        {'params': exit_decision_params, 'lr': RL_HPARAMS.lr_exit}  # Exit decision learning rate (higher)
+    ])
+    # optimizer = AdamW(filter(lambda p: p.requires_grad, student.parameters()), lr=RL_HPARAMS.lr)
     # we use https://huggingface.co/docs/trl/rloo_trainer  as an inspiration for logging. 
 
     run = wandb.init(
@@ -138,7 +171,14 @@ def main_rl_training():
             }
         )
     )
-
+    #
+    # Stable directory name for this run
+    run_id = (getattr(run, "id", None) 
+            or getattr(wandb, "run", None) and getattr(wandb.run, "id", None) 
+            or os.environ.get("WANDB_RUN_ID") 
+            or "no-wandb-id")
+    base_save_dir = Path("models") / f"rl-run-{run_id}"
+    base_save_dir.mkdir(parents=True, exist_ok=True)
     # Log a one-time table of metric descriptions for convenient reference in W&B
     metric_descs = run.config.get('metric_descriptions', {}) if run is not None else {}
     if isinstance(metric_descs, dict) and len(metric_descs) > 0:
@@ -149,16 +189,18 @@ def main_rl_training():
 
     # Define metric step and categories for clean grouping in W&B UI
     wandb.define_metric('training/episode')
-    for pattern in ['objective/*', 'rewards/*', 'exit/*', 'loss/*', 'completions/*', 'training/*', 'samples/*', 'accuracy/*']:
+    for pattern in ['objective/*', 'rewards/*', 'exit/*', 'loss/*', 'completions/*', 'training/*', 'samples/*' 
+                    # 'accuracy/*'
+                    ]:
         wandb.define_metric(pattern, step_metric='training/episode')
 
     # TODO: batching. For simplicity, treat batch_size = 1 here.
     train_dataset = dataset["train"]
+    start = int(getattr(RL_HPARAMS, "start_epoch", 0))
     table_history = []
 
-    for i, example in enumerate(train_dataset):
-
-
+    for i in range(start, len(train_dataset)):
+        example = train_dataset[i]
         prompt = example["question"]
         correct_answer = example["answer"]
 
@@ -208,16 +250,10 @@ def main_rl_training():
         )
 
         # 3) Reward components
-        verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
+        verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, 
+                                              input_prompt_length, tokenizer, RL_HPARAMS.REWARD_CORRECT)
         kl_tokens = compute_token_kl_from_logprobs(stu_logprobs, ref_logprobs, generated_attention_mask)
         avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
-
-        # 3.1) Compute sample labels (similar to format_accuracy/answer_accuracy in reference)
-        sample_labels = compute_sample_labels(verify)
-
-        difficulty_categories = [difficulty_category] * RL_HPARAMS.k
-        #compute accuracy metrics by difficulty (all samples have same difficulty as same prompt)
-        difficulty_accuracies = compute_accuracy_by_difficulty(verify, difficulty_categories)
 
         # import ipdb; ipdb.set_trace()
         # 4) Total reward per sequence (simple linear combination)
@@ -245,7 +281,8 @@ def main_rl_training():
             eos_id = tokenizer.eos_token_id if tokenizer.eos_token_id is not None else -1
 
             seq_lens = (tokens_tensor != pad_id).sum(dim=1).float()
-            contains_eos = (tokens_tensor == eos_id).any(dim=1) if eos_id != -1 else torch.zeros_like(seq_lens, dtype=torch.bool)
+            # contains_eos = (tokens_tensor == eos_id).any(dim=1) if eos_id != -1 else torch.zeros_like(seq_lens, dtype=torch.bool)
+            contains_eos = torch.tensor([tokenizer.eos_token in item for item in completions['texts']])
             clipped_ratio = 1.0 - contains_eos.float().mean().item()
             num_eos_tokens = int((tokens_tensor == eos_id).sum().item()) if eos_id != -1 else 0
 
@@ -256,9 +293,9 @@ def main_rl_training():
                 'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
                 
                 # Exit metrics
+                'exit/avg_layer': avg_exit_layer.mean().item(),
                 'exit/min_layer': avg_exit_layer.min().item(),
                 'exit/max_layer': avg_exit_layer.max().item(),
-                'exit/avg_layer': avg_exit_layer.mean().item(),
                 'exit/std_layer': avg_exit_layer.std(unbiased=False).item(),
                 
                 # Reward components
@@ -267,17 +304,18 @@ def main_rl_training():
                 'rewards/exit_layer_penalty_component_mean': (RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
 
                 # Training advantage
-                'training/lr': optimizer.param_groups[0]['lr'],
+                'training/lr_lora': optimizer.param_groups[0]['lr'],
+                'training/lr_exit': optimizer.param_groups[1]['lr'],
                 'training/episode': i,
                 'training/loss': float(loss.item() if hasattr(loss, 'item') else loss),
                 # 'training/advantage_mean': advantages.mean().item(),
                 'training/advantage_std': advantages.std(unbiased=False).item(),
-                'training/total_neg_logprobs_mean': -(stu_logprobs.mean().item() + student_sampled_exit_logprobs.mean().item()),
+                'training/total_neg_logprobs_mean': - compute_mean_wth_mask(stu_logprobs + student_sampled_exit_logprobs, generated_attention_mask).mean().item(),
                 
                 # Logprobs Mean
-                'neg_logprobs/total': -(stu_logprobs.mean().item() + student_sampled_exit_logprobs.mean().item()),
-                'neg_logprobs/prediction': -stu_logprobs.mean().item(),
-                'neg_logprobs/exit': -student_sampled_exit_logprobs.mean().item(),
+                'neg_logprobs/total': - compute_mean_wth_mask(stu_logprobs + student_sampled_exit_logprobs, generated_attention_mask).mean().item(),
+                'neg_logprobs/prediction': - compute_mean_wth_mask(stu_logprobs, generated_attention_mask).mean().item(),
+                'neg_logprobs/exit': - compute_mean_wth_mask(student_sampled_exit_logprobs, generated_attention_mask).mean().item(),
 
                 # Completions
                 'completions/mean_length': seq_lens.mean().item(),
@@ -292,12 +330,12 @@ def main_rl_training():
                 #'accuracy/incorrect_rate': sample_labels['stats']['incorrect_rate'],
                 #'accuracy/format_error_rate': sample_labels['stats']['format_error_rate'],
                 #'accuracy/good_format_rate': sample_labels['stats']['good_format_rate'],
-                'accuracy/answer_accuracy': sample_labels['stats']['answer_accuracy'],
-                'accuracy/format_accuracy': sample_labels['stats']['format_accuracy'],
+                # 'accuracy/answer_accuracy': sample_labels['stats']['answer_accuracy'],
+                # 'accuracy/format_accuracy': sample_labels['stats']['format_accuracy'],
             }
 
-            for key, value in difficulty_accuracies.items():
-                log_dict[f'accuracy/{key}'] = value #add difficulty accuracies to log dict
+            # for key, value in difficulty_accuracies.items():
+            #     log_dict[f'accuracy/{key}'] = value #add difficulty accuracies to log dict
 
             # Periodic sample generations table
             if (i % RL_HPARAMS.sample_log_interval) == 0:
@@ -386,8 +424,8 @@ def main_rl_training():
 
             wandb.log(log_dict)
             now = time.time()
-            if now >= next_save_ts:
-                save_model(student, save_path = f"models/rl-run-1/epoch-{i}")
+            if now >= next_save_ts and RL_HPARAMS.SAVE_MODEL == True:
+                save_model(student, save_path=str(base_save_dir / f"epoch-{i}"))
                 next_save_ts = now + save_interval
     wandb.finish()
 
