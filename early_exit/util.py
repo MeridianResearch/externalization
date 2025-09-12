@@ -124,9 +124,9 @@ class ExitPrescription:
     def get_unfrozen_mask(self, current_layer_idx: int) -> _T:
         """
         Layer is frozen if prescribed_exit_layer_idxs (where the early exit happened during generation)
-            is XXX: >= the current layer
+            is XXX: > the current layer
         """
-        return self.prescribed_exit_layer_idxs >= current_layer_idx
+        return self.prescribed_exit_layer_idxs > current_layer_idx
 
 def get_model(model_name: str, model_config: dict, device: str):
     
@@ -211,3 +211,27 @@ def load_model(model, model_path):
                 loaded_probes += 1
     
     return model
+
+def load_model_from_wandb(model, model_path, artifact_path):
+    if os.path.exists(model_path):
+        print(f"Model path {model_path} already exists, skipping download")
+    else:
+        api = wandb.Api()
+        artifact = api.artifact(artifact_path)
+        artifact.download(root=model_path)
+        
+    model = load_model(model, model_path)
+    
+    return model
+
+import json
+def configs_from_json(filepath):
+    try:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"File {filepath} not found")
+        return {}
+    except json.JSONDecodeError as e:
+        print(f"Invalid JSON in {filepath}: {e}")
+        return {}
