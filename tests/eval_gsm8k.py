@@ -14,7 +14,7 @@ from collections import defaultdict
 
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from shared_utils.generate import generate_text
-from early_exit.util import get_model, load_model
+from early_exit.util import get_model, load_model, load_model_from_wandb
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 
 from inspect_ai import Task, eval
@@ -34,6 +34,31 @@ def load_gsm8k_with_difficulty():
     gsm8k_dataset = {'train': dataset}
     
     return gsm8k_dataset
+
+def sample_balanced_by_difficulty(examples, max_samples=100, random_seed=42):
+    if max_samples:
+        import random
+        random.seed(random_seed)
+        
+        easy_examples = [ex for ex in examples if ex['difficulty_category'] == 'Easy']
+        medium_examples = [ex for ex in examples if ex['difficulty_category'] == 'Medium']
+        hard_examples = [ex for ex in examples if ex['difficulty_category'] == 'Hard']
+        
+        samples_per_category = max_samples // 3
+        remainder = max_samples % 3
+        
+        random.shuffle(easy_examples)
+        random.shuffle(medium_examples)
+        random.shuffle(hard_examples)
+        
+        selected_examples = []
+        selected_examples.extend(easy_examples[:samples_per_category + (1 if remainder > 0 else 0)])
+        selected_examples.extend(medium_examples[:samples_per_category + (1 if remainder > 1 else 0)])
+        selected_examples.extend(hard_examples[:samples_per_category])
+        
+        random.shuffle(selected_examples)
+        
+        return selected_examples
 
 def extract_solution(solution_str, method="strict"):
     assert method in ["strict", "flexible"]
@@ -70,11 +95,10 @@ def extract_solution(solution_str, method="strict"):
 base_model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
 device = "cuda"
-model_path = "models/early_exit_20250817_layers_5_kl1_0/step_1500"
+model_path = "models/rl_model"
 batch_size = 1
 max_samples = 100
 
-# GSM8K specific system prompt
 new_system_prompt = 'I am going to give you a math word problem. Solve it step by step, showing your reasoning. After your work, provide your final numerical answer.'
 
 tokenizer = get_tokenizer(base_model_name)
@@ -82,16 +106,15 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 
 base_model = get_model(base_model_name, config['model'], device)
 model = replace_attention_layers(base_model, config['lora'], device)
+#model = load_model_from_wandb(model, model_path = "models/sft_model_2", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early_exit_20250908_layers_5_big:v0')
 model = load_model(model, model_path)
 
 set_transformer_early_exit_mode(model, 'free_generate')
 
-# Load GSM8K dataset with difficulty
 dataset = load_gsm8k_with_difficulty()
 gsm8k_data = dataset['train']
 
-# Take first max_samples
-sample_data = gsm8k_data.select(range(min(max_samples, len(gsm8k_data))))
+sample_data = sample_balanced_by_difficulty(gsm8k_data, max_samples=max_samples)
 
 samples = []
 results_by_difficulty = defaultdict(list)
@@ -102,7 +125,7 @@ for i, example in enumerate(sample_data):
 
     question = example['question']
     answer = example['answer']
-    difficulty = example['difficulty']
+    difficulty = example['difficulty_category']
     
     ground_truth = str(answer)
     if "#### " in ground_truth:
@@ -110,7 +133,6 @@ for i, example in enumerate(sample_data):
         if answer_match:
             ground_truth = answer_match.group(1).strip().replace(",", "").replace("$", "")
     
-    # Create math problem prompt
     prompt = question
     
     with torch.no_grad():
@@ -311,7 +333,7 @@ eval_results = eval(task, model="openai/gpt-5", log_dir='./eval_logs_gsm8k')
 
 log = eval_results[0]
 
-# Calculate metrics by difficulty
+#metrics by difficulty
 difficulty_stats = defaultdict(lambda: {'correct': 0, 'total': 0, 'coherence': [], 'exit_rates': []})
 
 for sample in log.samples:
@@ -337,7 +359,7 @@ for difficulty in sorted(difficulty_stats.keys()):
     avg_coherence = sum(stats['coherence']) / len(stats['coherence']) if stats['coherence'] else 0
     avg_exit_rate = sum(stats['exit_rates']) / len(stats['exit_rates']) if stats['exit_rates'] else 0
     
-    print(f"\nDifficulty '{difficulty}':")
+    print(f"\n{difficulty}:")
     print(f"  Accuracy: {stats['correct']}/{stats['total']} = {accuracy:.3f} ({accuracy*100:.1f}%)")
     print(f"  Avg Coherence: {avg_coherence:.3f}")
     print(f"  Avg Early Exit Rate: {avg_exit_rate:.2%}")
@@ -352,7 +374,7 @@ overall_accuracy = total_correct / total_samples if total_samples > 0 else 0
 overall_coherence = sum(all_coherence) / len(all_coherence) if all_coherence else 0
 overall_exit_rate = sum(all_exit_rates) / len(all_exit_rates) if all_exit_rates else 0
 
-print(f"\nOVERALL RESULTS:")
+print(f"\nOverall:")
 print(f"  Accuracy: {total_correct}/{total_samples} = {overall_accuracy:.3f} ({overall_accuracy*100:.1f}%)")
 print(f"  Avg Coherence: {overall_coherence:.3f}")
 print(f"  Avg Early Exit Rate: {overall_exit_rate:.2%}")
