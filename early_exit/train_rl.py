@@ -11,8 +11,9 @@ from datasets import load_dataset
 from typing import Optional
 import asyncio
 import pandas as pd
+from datetime import datetime
 
-from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json
+from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json, save_model
 from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
@@ -29,6 +30,8 @@ sft_model_path = "models/early_exit_20250908_layers_5_big"  # TODO: set path to 
 RL_HPARAMS = RLHyperparams()
 training_steps_per_rollout = 4
 
+save_freq = 250
+save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}"
 
 # --- Models (schema) ---
 tokenizer = get_tokenizer(model_name)
@@ -37,8 +40,8 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
 # TODO: Change artifact path to sft trained gsm-8k model
-#student = load_model_from_wandb(student, model_path = "models/trained_model_v0", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early-exit-model-fs5ofmzp:v0')
-student = load_model(student, sft_model_path)
+student = load_model_from_wandb(student, model_path = "models/sft_model_2", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early_exit_20250908_layers_5_big:v0')
+#student = load_model(student, sft_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
@@ -193,8 +196,7 @@ def main_rl_training():
                                                      tokenizer.pad_token_id, mode = 'early_exit_probs')
 
             if training_step == 0:
-                first_step_stu_logprobs = stu_logprobs.clone()
-                first_step_student_early_exit_logprobs = student_early_exit_logprobs.clone()
+                first_step_lp_tokens = (stu_logprobs * generated_attention_mask).sum(dim=1).detach()
 
             # Runtime validation of rollout tensors (dtype/shape checks)
             _ = RolloutBatch(
@@ -223,21 +225,20 @@ def main_rl_training():
             # Normalize advantages by their standard deviation to stabilize learning
             adv_std = advantages.std(unbiased=False) + 1e-8
             normalized_advantages = advantages / adv_std
-
-            first_step_student_sampled_exit_logprobs = first_step_student_early_exit_logprobs.gather(
-                index = sampled_early_exit_layer_idxs_early.unsqueeze(-1), dim = 2).squeeze(-1)
             
             #Probability ratio: new / old (1.0 for step 0)
-            ratio = (stu_logprobs - first_step_stu_logprobs).exp()
+            new_lp_tokens = (stu_logprobs * generated_attention_mask).sum(dim=1)
+            ratio = (new_lp_tokens - first_step_lp_tokens).exp().detach()
+            #print(f"ratio: {ratio}, new_lp_tokens: {new_lp_tokens}, first_step_lp_tokens {first_step_lp_tokens}")
             
-            final_advantages = normalized_advantages * ratio.mean(dim=1)
+            final_advantages = normalized_advantages * ratio
             
             # 6) Weighted SFT update
             #loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, normalized_advantages, generated_attention_mask, optimizer, RL_HPARAMS)
             loss = weighted_sft_step(stu_logprobs, student_sampled_exit_logprobs, final_advantages, generated_attention_mask, optimizer, RL_HPARAMS)
 
 
-            # 7) Logging (schema)
+            # 7) Logging
             global_training_step += 1
             torch.cuda.empty_cache()
             with torch.no_grad():
@@ -297,7 +298,7 @@ def main_rl_training():
                     log_dict[f'accuracy/{key}'] = value #add difficulty accuracies to log dict
     
                 # Periodic sample generations table
-                if (i % RL_HPARAMS.sample_log_interval) == 0:
+                if (global_training_step % RL_HPARAMS.sample_log_interval) == 0:
                     num_rows = min(len(completions['texts']), RL_HPARAMS.sample_max_rows)
     
                     async def evaluate_batch_coherence():
@@ -382,6 +383,11 @@ def main_rl_training():
                     # log_dict['samples/selection_count'] = num_rows
     
                 wandb.log(log_dict)
+
+            if global_training_step % save_freq == 0:
+                checkpoint_path = f"{save_dir}/step_{global_training_step}"
+                save_model(student, checkpoint_path, upload_to_wandb=False)
+                print(f"Checkpoint saved to {checkpoint_path}")
 
     wandb.finish()
 
