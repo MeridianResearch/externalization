@@ -30,9 +30,9 @@ class RLHyperparams:
     SAVE_EVERY_HOURS: int = 5
     REWARD_CORRECT: float = 1.0
     start_epoch: int = 0
-    lr_lora: float = 1e-4,
-    lr_exit: float = 1e-5,
-    SAVE_MODEL: bool = False,
+    lr_lora: float = 1e-4
+    lr_exit: float = 1e-5
+    SAVE_MODEL: bool = False
     max_new_tokens: int = 900
 
 @dataclass

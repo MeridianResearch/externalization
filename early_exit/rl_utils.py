@@ -24,7 +24,7 @@ def compute_mean_wth_mask(input_tensor, mask):
 
 # ---------------- RL helper functions moved from train_rl.py ----------------
 @torch.no_grad()
-def generate_k_completions(model, prompt, k: int, tokenizer, config, device, system_prompt):
+def generate_k_completions(model, prompt, k: int, tokenizer, config, device, system_prompt, mode = 'free_generate'):
     """
     Free-generate K completions per prompt with early exits enabled.
 
@@ -38,7 +38,7 @@ def generate_k_completions(model, prompt, k: int, tokenizer, config, device, sys
     Typical ranges:
     - seq_len: 16–512 depending on generation configuration
     """
-    set_transformer_early_exit_mode(model, 'free_generate')
+    set_transformer_early_exit_mode(model, mode)
 
     all_tokens = []
     all_texts = []
@@ -56,10 +56,17 @@ def generate_k_completions(model, prompt, k: int, tokenizer, config, device, sys
                     generation_config=config['generation'],
                     device=device
                 )
-
-            sequences, exit_layer_idxs = model_outputs
-            tokens = sequences[0]
-            prescribed_exit_layers = exit_layer_idxs[0]
+            if mode == 'free_generate':
+                sequences, exit_layer_idxs = model_outputs
+                tokens = sequences[0]
+                prescribed_exit_layers = exit_layer_idxs[0]
+            elif mode == 'off':
+                tokens = model_outputs[0]
+                prescribed_exit_layers = [-1]*(len(tokens) - get_input_prompt_length(tokenizer = tokenizer,
+                                                                                     prompt = p,
+                                                                                     system_prompt = system_prompt))
+            else:
+                raise UserWarning(f"mode = {mode} is not currently supported")
             
             all_tokens.append(tokens[:-1])
             all_texts.append(decoded_response)

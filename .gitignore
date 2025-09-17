@@ -11,6 +11,7 @@ shared_utils/*
 # tests/*
 tests/early_exit_teacher/trash/*
 models/*
+results_and_data/eval/*
 results_and_data/early_exit_sft_dataset/test/merged_teacher_data_sparse.pkl.gz
 allocate_node.sh
 eval_logs/*
@@ -23,3 +24,4 @@ tests/*.csv
 run_sft_train_gsm8k.sh
 magic_commands.txt
 run_rl_train_sft_base.sh
+run_eval.sh

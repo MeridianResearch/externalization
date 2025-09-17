@@ -13,8 +13,6 @@ lora:
 
 generation:
   min_length: 0
-  max_new_tokens: 900
-  # max_new_tokens: 400
   do_sample: true
   temperature: 1.0
   top_p: 1.0

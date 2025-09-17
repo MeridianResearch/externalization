@@ -78,7 +78,7 @@ def generate_once(model, tokenizer, config, device, prompt, system_prompt, prefi
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--sft_model", type=str, default="models/gsm8k_old_school_1", help="Path to SFT model directory")
-parser.add_argument("--rl_model", type=str, default="models/rl-run-1/epoch-124", help="Path to RL model directory")
+parser.add_argument("--rl_model", type=str, default="models/rl-run-qi7wr8f6/epoch-695", help="Path to RL model directory")
 parser.add_argument("--base_model", type=str, default="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
 parser.add_argument("--config_path", type=str, default="config_greedy.yaml")
 parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")

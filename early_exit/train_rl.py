@@ -30,12 +30,12 @@ config_path = "config_deepseek.yaml"
 sft_model_path = "models/gsm8k_old_school_1"  # TODO: set path to SFT checkpoint
 
 RL_HPARAMS = RLHyperparams(
-                           sample_log_interval=1,
+                           sample_log_interval=25,
                            sample_max_rows=4,
-                           SAVE_EVERY_HOURS=20,
+                           SAVE_EVERY_HOURS=30,
                            lambda_exit=0.,
-                           k = 5,
-                           max_new_tokens=1000,
+                           k = 6,
+                           max_new_tokens=900,
                            lr_lora = 1e-4,
                            lr_exit = 1e-5
                         )
@@ -97,7 +97,7 @@ def main_rl_training():
     # Create optimizer with different learning rates
     optimizer = Adam([
         {'params': lora_params, 'lr': RL_HPARAMS.lr_lora},  # LoRA learning rate
-        {'params': exit_decision_params, 'lr': RL_HPARAMS.lr_exit}  # Exit decision learning rate (higher)
+        {'params': exit_decision_params, 'lr': RL_HPARAMS.lr_exit}  # Exit decision learning rate
     ])
     # optimizer = AdamW(filter(lambda p: p.requires_grad, student.parameters()), lr=RL_HPARAMS.lr)
     # we use https://huggingface.co/docs/trl/rloo_trainer  as an inspiration for logging. 
