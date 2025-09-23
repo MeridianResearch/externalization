@@ -141,6 +141,22 @@ def weighted_sft_step(student_log_likelihoods, student_early_exit_logprobs, adva
     optimizer.step()
     return loss.detach()
 
+def weighted_sft_loss(student_log_likelihoods, student_early_exit_logprobs, advantages, attention_mask, RL_HPARAMS):
+    """
+    Returns: scalar loss (FloatTensor). No optimizer calls here.
+    """
+    sequence_mean_log_likelihoods = compute_sequence_mean_loglik_student(student_log_likelihoods,
+                                                                         student_early_exit_logprobs,
+                                                                         attention_mask)
+
+    K = RL_HPARAMS.k
+    B = advantages.numel() // K
+    sequence_mean_log_likelihoods = sequence_mean_log_likelihoods.view(B, K)
+    advantages = advantages.view(B, K)
+
+    loss = -(advantages.detach() * sequence_mean_log_likelihoods).mean() 
+    return loss
+
 
 def get_input_prompt_length(tokenizer, prompt, system_prompt):
     from shared_utils.generate import format_conversation, transform_conversations, full_tokenize
