@@ -106,6 +106,79 @@ def compute_verification_rewards(completions_tokens, completions_text, correct_a
     
     return rewards
 
+def extract_solution_text(solution_str: str, method: str = "strict"):
+    """
+    strict   : extract the text after the LAST 'Answer:' line.
+    flexible : return the LAST non-empty line of the text.
+    """
+    assert method in ["strict", "flexible"]
+
+    if not isinstance(solution_str, str) or not solution_str.strip():
+        return None
+
+    s = solution_str
+
+    s = s.replace("<｜begin▁of▁sentence｜>", "").replace("<｜end▁of▁sentence｜>", "")
+    s = re.sub(r"<think>.*?</think>", "", s, flags=re.S | re.I)
+    s = re.sub(r"<\|.*?\|>", "", s, flags=re.S)  # remove <|...|> tokens
+
+    if method == "strict":
+        parts = re.split(r"<\|\s*Assistant\s*\|>", s, flags=re.I)
+        if len(parts) >= 2:
+            s = parts[-1]
+
+        anchor = 0
+        rs = list(re.finditer(r"^\s*reasoning\s*:\s*", s, flags=re.I | re.M))
+        if rs:
+            anchor = max(anchor, rs[-1].end())
+        s_tail = s[anchor:] if anchor > 0 else s
+
+        matches = list(re.finditer(
+            r"^\s*(?:\*\*\s*)?answer(?:\s*\*\*)?\s*[:：]\s*(.+?)\s*$",
+            s_tail, flags=re.I | re.M
+        ))
+        if not matches:
+            return None
+
+        ans = matches[-1].group(1).strip()
+        ans = re.sub(r"^\*\*|\*\*$", "", ans).strip()
+        ans = ans.replace("<｜end▁of▁sentence｜>", "").strip()
+        return ans or None
+
+    else:  # method == "flexible"
+        lines = [ln.strip() for ln in s.splitlines() if ln.strip()]
+        return (lines[-1] if lines else None)
+
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", str(s).strip().lower())
+
+def compute_verification_rewards_text(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):
+    rewards = torch.zeros(len(completions_text), dtype=torch.float32)
+
+    for i, _ in enumerate(completions_text):
+
+        completion_tokens = completions_tokens[i][input_prompt_length:] #remove prompt
+        completion_text = tokenizer.decode(completion_tokens, skip_special_tokens=True) #tokens to text
+
+        # ground truth (K completions per 1 prompt)
+        ground_truth_idx = i // len(correct_answers) if len(correct_answers) > 1 else 0
+        ground_truth = _norm(str(correct_answers[ground_truth_idx]))
+
+        # extract (do NOT normalize yet; we need None logic)
+        extracted_answer = extract_solution_text(completion_text, method="strict")
+        extracted_answer_flexible   = extract_solution_text(completion_text, method="flexible")
+
+        if extracted_answer is not None:
+            rewards[i] = 1.0 if _norm(extracted_answer) == ground_truth else 0.0
+        else:
+            if extracted_answer_flexible is None:
+                rewards[i] = -1.0                        
+            else:
+                rewards[i] = 0.5 if _norm(extracted_answer_flexible) == ground_truth else -1.0
+
+    return rewards
+
+
 '''
 def compute_verification_rewards(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):
 

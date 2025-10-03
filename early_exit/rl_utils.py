@@ -372,6 +372,23 @@ def load_gsm8k_with_difficulty():
     return gsm8k_dataset
 
 
+def load_tom(
+    repo_id: str = "lizardp1/tom_externalization",
+    filename: str = "tom_rl.csv"
+) -> dict[str, Dataset]:
+
+    csv_path = hf_hub_download(
+        repo_id=repo_id,
+        filename=filename,
+        repo_type="dataset"
+    )
+
+    ds_dict = load_dataset("csv", data_files={"train": csv_path})
+    ds = ds_dict["train"]
+
+    return {"train": ds}
+
+
 @torch.no_grad()
 def compute_accuracy_by_difficulty(verify_rewards, difficulty_categories):
     sample_labels = compute_sample_labels(verify_rewards)
