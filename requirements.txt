@@ -6,3 +6,5 @@ wandb
 datasets
 inspect_ai
 openai
+hf_transfer
+vllm
