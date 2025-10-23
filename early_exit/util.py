@@ -235,3 +235,110 @@ def configs_from_json(filepath):
     except json.JSONDecodeError as e:
         print(f"Invalid JSON in {filepath}: {e}")
         return {}
+
+
+import pandas as pd
+import json
+from torch.utils.data import Dataset
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
+
+@dataclass
+class CSVPromptBatch:
+    idx: List[int]
+    story: Optional[List[str]] = None
+    question: Optional[List[str]] = None
+    prompt: Optional[List[str]] = None
+    answer: Optional[List[str]] = None
+    correct_answer: Optional[List[str]] = None
+
+    full_user_prompt: List[str] = field(default_factory=list)
+    correct_answers: List[str]   = field(default_factory=list)
+
+    def __post_init__(self):
+        pass
+
+
+class CSVPromptDataset(Dataset):
+
+    def __init__(self, tsv_path: str, json_path: Optional[str] = None):
+        self.df = pd.read_csv(tsv_path, header=0)
+        self.columns = [c.strip() for c in self.df.columns.tolist()]
+
+        #assert self.columns == ['story', 'question'], "Need this dataset structure right now!"
+
+        self.system_prompt = ""
+        self.task_context = ""
+        self.prefiller = ""
+        # Load and validate JSON config if provided
+        if json_path:
+            with open(json_path, 'r') as f:
+                config = json.load(f)
+            self.system_prompt = config.get('system_prompt', "")
+            self.task_context  = config.get('task_context', "")
+            self.prefiller     = config.get('prefiller', "")
+
+        cols = set(self.columns)
+        if {'story','question','answer'}.issubset(cols):
+            self.schema = 'story_question_answer'
+        elif {'story','question'}.issubset(cols):
+            self.schema = 'story_question'
+        elif {'prompt','answer'}.issubset(cols):
+            self.schema = 'prompt_answer'
+        elif {'prompt','correct_answer'}.issubset(cols):
+            self.schema = 'prompt_correct_answer'
+        else:
+            raise AssertionError(
+                f"Unsupported CSV columns {self.columns}. "
+                "Expected one of: ['story','question','answer'], "
+                "['story','question'], ['prompt','answer'], ['prompt','correct_answer']."
+            )
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx: int):
+        return idx, self.df.iloc[idx].to_dict()
+
+    def _compose_prompt(self, row: Dict[str, Any]) -> str:
+        if self.schema in ('story_question', 'story_question_answer'):
+            core = f"{self.task_context}\n\n{row['story']}\n\n{row['question']}"
+        else:
+            core = str(row['prompt'])
+        return core
+
+    def _extract_correct_answer(self, row: Dict[str, Any]) -> Optional[str]:
+        if self.schema == 'story_question_answer':
+            return str(row['answer'])
+        if self.schema == 'prompt_answer':
+            return str(row['answer'])
+        if self.schema == 'prompt_correct_answer':
+            return str(row['correct_answer'])
+        # 'story_question' has no labels
+        return None
+
+    def generate_prompt(self, batch_item: dict) -> str:
+        return f"{self.task_context}\n\n{batch_item['story']}\n\n{batch_item['question']}"
+
+    def collate_fn(self, batch) -> CSVPromptBatch:
+        idxs = [item[0] for item in batch]
+        rows = [item[1] for item in batch]
+
+        full_prompts = [self._compose_prompt(r) for r in rows]
+        corrects = [self._extract_correct_answer(r) for r in rows]
+
+        corrects = [c if c is not None else "" for c in corrects]
+
+        def col_list(name): 
+            return [r[name] for r in rows] if name in self.columns else None
+
+        return CSVPromptBatch(
+            idx=idxs,
+            story=col_list('story'),
+            question=col_list('question'),
+            prompt=col_list('prompt'),
+            answer=col_list('answer'),
+            correct_answer=col_list('correct_answer'),
+            full_user_prompt=full_prompts,
+            correct_answers=corrects,
+        )

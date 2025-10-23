@@ -15,13 +15,13 @@ import asyncio
 import pandas as pd
 from datetime import datetime
 
-from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json, save_model
+from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json, save_model, CSVPromptDataset
 from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_tom, compute_accuracy_by_difficulty
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards_text, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 from shared_utils.load import get_tokenizer, configs_from_yaml
-from shared_utils.data import CSVPromptDataset
+#from shared_utils.data import CSVPromptDataset
 from torch.nn.utils.rnn import pad_sequence
 
 
