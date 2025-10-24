@@ -66,7 +66,19 @@ def main_rl_training():
     """
     # TODO: optimizer (e.g., Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5))
     # Check if there are better optimizers for this problem
-    optimizer = Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5)
+    lora_params = []
+    exit_decision_params = []
+    for name, param in student.named_parameters():
+        if param.requires_grad:
+            if 'lora' in name:
+                lora_params.append(param)
+            elif 'early_exit_decision_weights' in name:
+                exit_decision_params.append(param) 
+            else: 
+                raise ValueError(f"Unknown trainable parameter: {name}")
+                
+    optimizer = Adam([ {'params': lora_params, 'lr': 1e-4}, {'params': exit_decision_params, 'lr': 1e-5} ])
+    #optimizer = Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5)
     # we use https://huggingface.co/docs/trl/rloo_trainer  as an inspiration for logging. 
 
     global_training_step = 0
@@ -174,6 +186,7 @@ def main_rl_training():
         acc_format_sum = 0.0
         acc_difficulty_sums = {}
         acc_count = 0
+        sample_rows = []
         
         for i in range(B):
             prompt = prompts[i]
@@ -197,11 +210,11 @@ def main_rl_training():
             prescribed_exit_layers = pad_sequence(exit_info['prescribed_exit_layers'], batch_first=True, padding_value=torch.inf)
 
             # 3) Reward components (computed once per rollout)
-            verify = compute_verification_rewards_text(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
+            verify, aux = compute_verification_rewards_text(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
             avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
 
             # 3.1) Compute sample labels
-            sample_labels = compute_sample_labels(verify)
+            sample_labels = compute_sample_labels(verify, aux=aux)
 
             difficulty_categories = ['easy'] * RL_HPARAMS.k
             #compute accuracy metrics by difficulty (all samples have same difficulty as same prompt)
@@ -294,6 +307,23 @@ def main_rl_training():
                         acc_difficulty_sums[k] = acc_difficulty_sums.get(k, 0.0) + float(v)
                     acc_count += 1
 
+                    for k_idx in range(RL_HPARAMS.k):
+                        sample_rows.append({
+                            "episode": global_training_step + 1,  # next step
+                            "prompt_text": prompt,
+                            "completion_text": completions['texts'][k_idx],
+                            "correct_answer": correct_answer,
+                            "verify_reward": float(verify[k_idx].item()),
+                            "kl_estimate": float(kl_tokens[k_idx].item()),
+                            "avg_exit_layer": float(avg_exit_layer[k_idx].item()),
+                            "gen_len": int(gen_lens[k_idx].item()),
+                            "contains_eos": bool(contains_eos[k_idx].item()),
+                            "selection_index": int(k_idx),
+                            # if you still want labels, pass the right slice here:
+                            "correctness_label": sample_labels['labels'][k_idx]['correctness'],
+                            "format_label": sample_labels['labels'][k_idx]['format_quality'],
+                        })
+
         optimizer.step()
 
 
@@ -369,26 +399,23 @@ def main_rl_training():
                 log_dict[f'accuracy/{key}'] = value / max(1, acc_count) #add difficulty accuracies to log dict
 
             # Periodic sample generations table
-            if (global_training_step % RL_HPARAMS.sample_log_interval) == 0:
-                num_rows = min(len(completions['texts']), RL_HPARAMS.sample_max_rows)
+            if (global_training_step % RL_HPARAMS.sample_log_interval) == 0 and len(sample_rows) > 0:
+                rows_to_log = sample_rows[:RL_HPARAMS.sample_max_rows]
+                #num_rows = min(len(completions['texts']), RL_HPARAMS.sample_max_rows)
 
-                async def evaluate_batch_coherence():
-                    tasks = []
-                    for row_idx in range(num_rows):
-                        task = evaluate_coherence(prompt, completions['texts'][row_idx])
-                        tasks.append(task)
-                    
-                    results = await asyncio.gather(*tasks)
-                    return results
+                async def eval_coherence_batch():
+                    tasks = [evaluate_coherence(r["prompt_text"], r["completion_text"]) for r in rows_to_log]
+                    return await asyncio.gather(*tasks)
                 
-                coherence_batch_results = asyncio.run(evaluate_batch_coherence())
-
-                avg_coherence = sum(r['coherence'] for r in coherence_batch_results) / len(coherence_batch_results)
-                avg_completeness = sum(r['completeness'] for r in coherence_batch_results) / len(coherence_batch_results)
-                avg_clarity = sum(r['clarity'] for r in coherence_batch_results) / len(coherence_batch_results)
-                avg_no_repetition = sum(r['no_repetition'] for r in coherence_batch_results) / len(coherence_batch_results)
-                avg_overall = sum(r['average'] for r in coherence_batch_results) / len(coherence_batch_results)
-    
+                coherence_batch_results = asyncio.run(eval_coherence_batch())
+                
+                n = max(1, len(coherence_batch_results))
+                avg_coherence = sum(r['coherence'] for r in coherence_batch_results) / n
+                avg_completeness = sum(r['completeness'] for r in coherence_batch_results) / n
+                avg_clarity = sum(r['clarity'] for r in coherence_batch_results) / n
+                avg_no_repetition = sum(r['no_repetition'] for r in coherence_batch_results) / n
+                avg_overall = sum(r['average'] for r in coherence_batch_results) / n
+                
                 log_dict.update({
                     'coherence/batch_coherence': avg_coherence,
                     'coherence/batch_completeness': avg_completeness,
@@ -396,7 +423,15 @@ def main_rl_training():
                     'coherence/batch_no_repetition': avg_no_repetition,
                     'coherence/batch_average': avg_overall,
                 })
-
+                
+                for r, c in zip(rows_to_log, coherence_batch_results):
+                    r["coherence_coherence"] = int(c["coherence"])
+                    r["coherence_completeness"] = int(c["completeness"])
+                    r["coherence_clarity"] = int(c["clarity"])
+                    r["coherence_no_repetition"] = int(c["no_repetition"])
+                    r["coherence_average"] = float(c["average"])
+                    r["coherence_explanation"] = c["explanation"]
+            
                 columns = [
                     'episode',
                     'samples/prompt_text',
@@ -417,39 +452,30 @@ def main_rl_training():
                     'samples/coherence_average',
                     'samples/coherence_explanation',
                 ]
-                for row_idx in range(num_rows):
-                    full_len = int(seq_lens[row_idx].item())
-                    gen_len = max(0, full_len - int(input_prompt_length))
-
-                    coherence_result = coherence_batch_results[row_idx]
-
-                    table_history.append([
-                        global_training_step,
-                        prompt,
-                        completions['texts'][row_idx],
-                        correct_answer,
-                        float(verify[row_idx].item()),
-                        float(kl_tokens[row_idx].item()),
-                        float(avg_exit_layer[row_idx].item()),
-                        int(gen_len),
-                        bool(contains_eos[row_idx].item()),
-                        int(row_idx),
-                        sample_labels['labels'][row_idx]['correctness'],
-                        sample_labels['labels'][row_idx]['format_quality'],
-                        int(coherence_result['coherence']),
-                        int(coherence_result['completeness']),
-                        int(coherence_result['clarity']),
-                        int(coherence_result['no_repetition']),
-                        float(coherence_result['average']),
-                        coherence_result['explanation']
-                    ])
-
+            
                 table = wandb.Table(columns=columns)
-                for row in table_history:
-                    table.add_data(*row)
+                for r in rows_to_log:
+                    table.add_data(
+                        r["episode"],
+                        r["prompt_text"],
+                        r["completion_text"],
+                        r["correct_answer"],
+                        r["verify_reward"],
+                        r["kl_estimate"],
+                        r["avg_exit_layer"],
+                        r["gen_len"],
+                        r["contains_eos"],
+                        r["selection_index"],
+                        r["correctness_label"],
+                        r["format_label"],
+                        r.get("coherence_coherence"),
+                        r.get("coherence_completeness"),
+                        r.get("coherence_clarity"),
+                        r.get("coherence_no_repetition"),
+                        r.get("coherence_average"),
+                        r.get("coherence_explanation"),
+                    )
                 log_dict['samples/generations'] = table
-                # log_dict['samples/selection_policy'] = 'first'
-                # log_dict['samples/selection_count'] = num_rows
 
             wandb.log(log_dict)
 

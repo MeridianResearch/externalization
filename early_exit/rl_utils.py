@@ -235,61 +235,78 @@ def apply_masking(input_probs, tokens, input_prompt_length, pad_token_id, mode =
     return masked_logprobs
 
 @torch.no_grad()
-def compute_sample_labels(verification_rewards):
+def compute_sample_labels(verification_rewards, aux=None, partial_threshold: float = 0.5):
     """
-    Compute correctness and format labels for samples, similar to format_accuracy/answer_accuracy in reference.
-
-    Args:
-        verification_rewards: Tensor of reward values [-1.0, 1.0]
-        completions_texts: List of completion text strings
-
-    Returns:
-        dict with label counts and ratios
+    If aux is provided:
+      - format_accuracy := mean(format_ok)
+      - answer_accuracy := mean(exact & format_ok)    # exact & well formatted
+      - correctness label:
+          'exact' if exact
+          'partial' if not exact and similarity >= partial_threshold
+          'incorrect' otherwise
+      - format_quality: 'good_format' if format_ok else 'poor_format'
+    Otherwise, fall back to old reward-based bucketing.
     """
     labels = []
-    for i, reward in enumerate(verification_rewards):
-        reward_val = reward.item()
+    if aux is not None:
+        fmt = aux['format_ok'].cpu()
+        sim = aux['similarity'].cpu()
+        ex  = aux['exact'].cpu()
 
-        # Determine correctness label based on reward value
-        if reward_val == 1.0:
+        for i in range(len(sim)):
+            if not fmt[i]:
+                correctness = 'format_error'
+                format_quality = 'poor_format'
+            else:
+                if ex[i]:
+                    correctness = 'exact'
+                elif sim[i] >= partial_threshold:
+                    correctness = 'partial'
+                else:
+                    correctness = 'incorrect'
+                format_quality = 'good_format'
+
+            labels.append({'correctness': correctness, 'format_quality': format_quality})
+
+        total = len(labels)
+        answer_acc = ((ex & fmt).float().mean().item()) if total else 0.0
+        format_acc = (fmt.float().mean().item()) if total else 0.0
+
+        return {
+            'labels': labels,
+            'stats': {
+                'answer_accuracy': answer_acc,   # exact & well-formatted
+                'format_accuracy': format_acc,
+                'partial_rate': ( ( (~ex) & fmt & (sim >= partial_threshold) ).float().mean().item() ) if total else 0.0,
+            }
+        }
+
+    total_samples = 0
+    correct_count = 0
+    good_format_count = 0
+    for reward in verification_rewards:
+        total_samples += 1
+        rv = float(reward.item())
+        if rv == 1.0:
             correctness_label = 'correct_format'
-        elif reward_val >= 0.5:
+        elif rv >= 0.5:
             correctness_label = 'correct_noformat'
-        elif reward_val == 0.0:
+        elif rv == 0.0:
             correctness_label = 'incorrect_format'
-        elif reward_val >= -1.0:
+        elif rv >= -1.0:
             correctness_label = 'incorrect_noformat'
         else:
             correctness_label = 'unknown'
-
-        # Determine format quality based on presence of ####
-        #completion_text = completions_texts[i]
-        #has_format_marker = '####' in completion_text
         format_label = 'good_format' if correctness_label in ['correct_format', 'incorrect_format'] else 'poor_format'
-
-        labels.append({
-            'correctness': correctness_label,
-            'format_quality': format_label
-        })
-
-    # Compute statistics
-    total_samples = len(labels)
-    correct_count = sum(1 for l in labels if l['correctness'] == 'correct_format')
-    #partial_count = sum(1 for l in labels if l['correctness'] == 'partial')
-    #incorrect_count = sum(1 for l in labels if l['correctness'] == 'incorrect')
-    #format_error_count = sum(1 for l in labels if l['correctness'] == 'format_error')
-    good_format_count = sum(1 for l in labels if l['format_quality'] == 'good_format')
+        labels.append({'correctness': correctness_label, 'format_quality': format_label})
+        correct_count += int(correctness_label == 'correct_format')
+        good_format_count += int(format_label == 'good_format')
 
     return {
         'labels': labels,
         'stats': {
-            'answer_accuracy': correct_count / total_samples,
-            #'partial_rate': partial_count / total_samples,
-            #'incorrect_rate': incorrect_count / total_samples,
-            #'format_error_rate': format_error_count / total_samples,
-            #'good_format_rate': good_format_count / total_samples,
-            #'answer_accuracy': (correct_count + partial_count) / total_samples,  # Similar to reference
-            'format_accuracy': good_format_count / total_samples  # Similar to reference
+            'answer_accuracy': (correct_count / total_samples) if total_samples else 0.0,
+            'format_accuracy': (good_format_count / total_samples) if total_samples else 0.0
         }
     }
 
