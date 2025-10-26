@@ -49,6 +49,18 @@ externalization/
 └── results_and_data/   # Training datasets and experimental results
 ```
 
+### Setup
+
+`uv` is a great way to install packages fast.
+
+
+```bash
+pip install uv
+uv venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
+
 ### Basic Usage
 
 **Train Early Exit Model**:
