@@ -1,20 +1,125 @@
-import torch
-from torch.optim import Adam
+import asyncio
+from typing import Optional, List, Dict
 
-from datasets import load_dataset, Dataset
 import pandas as pd
+import torch
+from torch import Tensor as _T
+from torch.optim import Adam
+from datasets import load_dataset, Dataset
+from huggingface_hub import hf_hub_download, upload_file
+from inspect_ai.model import get_model as get_inspect_model
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from early_exit.patching import set_transformer_early_exit_mode
-from shared_utils.generate import generate_text
-from typing import List
-
 from early_exit.rl_types import *
+from shared_utils.generate import generate_text, format_conversation, full_tokenize
 
-from shared_utils.generate import generate_text
 
-import asyncio
-from inspect_ai.model import get_model as get_inspect_model
-from huggingface_hub import hf_hub_download, upload_file
+def generate_text_batched(model: AutoModelForCausalLM, prompt: str | List[str], system_prompt: str| List[str], prefiller: Optional[str| List[str]], tokenizer: AutoTokenizer, generation_config: dict, device: str):
+    if isinstance(prompt, str):
+        prompt = [prompt]
+    pre_transformed_conversation = format_conversation(user_prompts = prompt, system_prompt=system_prompt)
+    full_prompts = tokenizer.apply_chat_template(pre_transformed_conversation, 
+                                                 prefiller=prefiller,
+                                                 tokenize=False,
+                                                 add_generation_prompt=True # adds the <｜Assistant｜> token at the end
+                                                 )
+    inputs = full_tokenize(prompts=full_prompts, tokenizer=tokenizer, device = device, add_special_tokens=False)
+    print('prompt tokens shape:', inputs['input_ids'].shape)
+    all_model_outputs = model.generate(**inputs, **generation_config)
+    decoded_responses = tokenizer.batch_decode(all_model_outputs[0])
+    return decoded_responses, all_model_outputs
+
+
+def generate_k_completions_batched(
+        model, 
+        prompts, 
+        k: int, 
+        tokenizer, 
+        config, 
+        device, 
+        system_prompt
+    ):
+    """
+    Free-generate K completions per prompt with early exits enabled.
+
+    Expected outputs (used later in the pipeline):
+    - completions:
+        - tokens: LongTensor of shape [batch*K, seq_len]; dtype=torch.long
+        - texts: list[str] of length batch*K
+    - exit_info:
+        - prescribed_exit_layers: Optional[LongTensor] of shape [batch*K, seq_len] for re-scoring
+
+    Typical ranges:
+    - seq_len: 16–512 depending on generation configuration
+    """
+    set_transformer_early_exit_mode(model, 'free_generate')
+
+    all_tokens = []
+    all_texts = []
+    all_prescribed_exit_layers = []
+    
+    # Batch all generations together: [p1, p1, ..., p1 (k times), p2, p2, ..., p2 (k times), ...]
+    batched_prompts = [p for p in prompts for _ in range(k)]
+    
+    with torch.no_grad():
+        decoded_responses, model_outputs = generate_text_batched(
+            model=model,
+            prompt=batched_prompts,
+            system_prompt=system_prompt,
+            prefiller='',
+            tokenizer=tokenizer,
+            generation_config=config['generation'],
+            device=device
+        )
+    
+    sequences, exit_layer_idxs = model_outputs
+    
+    # Process all outputs from the batch
+    for i in range(len(batched_prompts)):
+        tokens = sequences[i]
+        prescribed_exit_layers = exit_layer_idxs[i]
+        
+        all_tokens.append(tokens[:-1])
+        all_texts.append(decoded_responses[i])
+        all_prescribed_exit_layers.append(prescribed_exit_layers[1:])
+    
+    max_seq_len = max(len(tokens) for tokens in all_tokens)
+    padded_tokens = []
+    final_prescribed_layers = []  # no padding since will mess up avg exit layer
+
+    for i, (tokens, exit_layers) in enumerate(zip(all_tokens, all_prescribed_exit_layers)):
+        out_of_max_generation_length = tokens[-1] not in [tokenizer.eos_token_id, tokenizer.pad_token_id]
+        if out_of_max_generation_length:
+            eos_idx = len(tokens)
+        else:
+            eos_idx = (tokens[:] == tokenizer.eos_token_id).nonzero(as_tuple=False)[0].item()
+
+        prompt_len_in_tokens = len(tokens) - len(exit_layers)
+        trimmed_exit_layers = exit_layers[:eos_idx - prompt_len_in_tokens]
+
+        pad_length = max_seq_len - len(tokens)
+        if pad_length > 0:
+            padded_token = torch.cat([tokens, torch.full((pad_length,), tokenizer.pad_token_id, dtype=tokens.dtype, device=tokens.device)])
+        else:
+            padded_token = tokens
+
+        padded_tokens.append(padded_token)
+        final_prescribed_layers.append(trimmed_exit_layers)
+
+    completions_tokens = torch.stack(padded_tokens, dim=0)
+
+    completions = {
+        'tokens': completions_tokens,
+        'texts': all_texts
+    }
+
+    exit_info = {
+        'prescribed_exit_layers': final_prescribed_layers
+    }
+    
+    return completions, exit_info
+
 
 # ---------------- RL helper functions moved from train_rl.py ----------------
 def generate_k_completions(model, prompt, k: int, tokenizer, config, device, system_prompt):

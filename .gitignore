@@ -1,6 +1,6 @@
 models/
 results_and_data/early_exit_sft_dataset/merged_teacher_data_sparse.pkl.gz
-
+wandb/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
