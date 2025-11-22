@@ -134,7 +134,7 @@ def plot_exit_distribution_overall(results: List[Dict], teacher_probs_overall,
         for layer, count in layer_dist.items():
             exit_data[layer] += count
     
-    fig, ax = plt.subplots(1, 1, figsize=(12, 7))
+    fig, ax = plt.subplots(1, 1, figsize=(14, 7))
     
     layers = sorted(exit_data.keys())
     counts = [exit_data[layer] for layer in layers]
@@ -152,19 +152,36 @@ def plot_exit_distribution_overall(results: List[Dict], teacher_probs_overall,
     
     colors = orange_gradient(len(layers))
     
-    teacher_percentages = teacher_probs_overall * 100  #conv to percentage
+    teacher_percentages = teacher_probs_overall * 100  # conv to percentage
     
-    #teacher bars
-    ax.bar(teacher_x_positions, teacher_percentages, 
-           width=2.5, color='gray', edgecolor='black', linewidth=1.5,
-           alpha=0.3, zorder=1, label='Teacher Target')
+    # Bar width and offset for side-by-side bars
+    bar_width = 1.8
+    offset = bar_width / 2
     
-    bars = ax.bar(layers, percentages, width=2.0, color=colors, edgecolor='none', zorder=2)
+    # Teacher bars (left)
+    teacher_bars = ax.bar([x - offset for x in teacher_x_positions], teacher_percentages, 
+           width=bar_width, color='gray', edgecolor='black', linewidth=1.5,
+           alpha=0.6, zorder=2, label='Teacher Target')
+    
+    # Actual bars (right) - with outline for visibility
+    actual_bars = ax.bar([x + offset for x in layers], percentages, 
+           width=bar_width, color=colors, edgecolor='black', linewidth=1.2, zorder=2)
     
     max_height = max([max(percentages), max(teacher_percentages)])
-    for layer, percentage in zip(layers, percentages):
-        if percentage > 0.5:  # Only show label if bar is visible
-            ax.text(layer, percentage + max_height * 0.02, 
+    
+    # Add labels on top of teacher bars
+    for x_pos, percentage in zip(teacher_x_positions, teacher_percentages):
+        if percentage > 0.5:
+            ax.text(x_pos - offset, percentage + max_height * 0.02, 
+                    f'{percentage:.1f}%', 
+                    ha='center', va='bottom', 
+                    fontsize=ANNOTATION_FONTSIZE, 
+                    fontweight='bold', zorder=4)
+    
+    # Add labels on top of actual bars
+    for x_pos, percentage in zip(layers, percentages):
+        if percentage > 0.5:
+            ax.text(x_pos + offset, percentage + max_height * 0.02, 
                     f'{percentage:.1f}%', 
                     ha='center', va='bottom', 
                     fontsize=ANNOTATION_FONTSIZE, 
@@ -212,7 +229,7 @@ def plot_exit_distribution(results: List[Dict], teacher_probs_by_difficulty: Dic
         for layer, count in layer_dist.items():
             difficulty_data[difficulty][layer] += count
     
-    fig, axes = plt.subplots(3, 1, figsize=(12, 14), sharex=True)
+    fig, axes = plt.subplots(3, 1, figsize=(14, 14), sharex=True)
     difficulties = ['Easy', 'Medium', 'Hard']
     
     all_layers = set()
@@ -245,20 +262,38 @@ def plot_exit_distribution(results: List[Dict], teacher_probs_by_difficulty: Dic
         
         colors = orange_gradient(len(layers))
         
+        # Bar width and offset for side-by-side bars
+        bar_width = 0.75
+        offset = bar_width / 2
+        
         if difficulty in teacher_probs_by_difficulty:
             teacher_probs = teacher_probs_by_difficulty[difficulty]  # [num_layers+1]
             teacher_percentages = teacher_probs * 100
             
-            ax.bar(teacher_x_positions, teacher_percentages, 
-                   width=1.2, color='gray', edgecolor='black', linewidth=1.5,
-                   alpha=0.3, zorder=1, label='Teacher Target')
+            # Teacher bars (left)
+            ax.bar([x - offset for x in teacher_x_positions], teacher_percentages, 
+                   width=bar_width, color='gray', edgecolor='black', linewidth=1.5,
+                   alpha=0.6, zorder=2, label='Teacher Target')
+            
+            # Add labels on teacher bars
+            max_val = max([max(percentages), max(teacher_percentages)])
+            for x_pos, percentage in zip(teacher_x_positions, teacher_percentages):
+                if percentage > 0.5:
+                    ax.text(x_pos - offset, percentage + max_val * 0.02, 
+                            f'{percentage:.1f}%', 
+                            ha='center', va='bottom', 
+                            fontsize=ANNOTATION_FONTSIZE, 
+                            fontweight='bold', zorder=4)
         
-        bars = ax.bar(layers, percentages, width=1.0, color=colors, edgecolor='none', zorder=2)
+        # Actual bars (right) - with outline for visibility
+        bars = ax.bar([x + offset for x in layers], percentages, 
+                      width=bar_width, color=colors, edgecolor='black', linewidth=1.2, zorder=2)
         
-        for layer, percentage in zip(layers, percentages):
+        # Add labels on actual bars
+        max_val = max([max(percentages), max(teacher_probs_by_difficulty[difficulty] * 100) if difficulty in teacher_probs_by_difficulty else 0])
+        for x_pos, percentage in zip(layers, percentages):
             if percentage > 0.5:  # Only show label if bar is visible
-                ax.text(layer, percentage + max([max(percentages), 
-                        max(teacher_probs_by_difficulty[difficulty] * 100) if difficulty in teacher_probs_by_difficulty else 0]) * 0.02, 
+                ax.text(x_pos + offset, percentage + max_val * 0.02, 
                         f'{percentage:.1f}%', 
                         ha='center', va='bottom', 
                         fontsize=ANNOTATION_FONTSIZE, 
@@ -303,9 +338,9 @@ def main():
     base_model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
     config_path = "config_deepseek.yaml"
     device = "cuda"
-    model_path = "models/rl_model"
+    model_path = "models/early_exit_20251121_kl1_layers_5_big"
     batch_size = 1
-    max_samples = 60
+    max_samples = 50
     
     tokenizer = get_tokenizer(base_model_name)
     config = configs_from_yaml(config_path, tokenizer.eos_token_id)
@@ -313,9 +348,9 @@ def main():
     base_model = get_model(base_model_name, config['model'], device)
     model = replace_attention_layers(base_model, config['lora'], device)
 
-    model = load_model_from_wandb(model, model_path = "models/sft_model_2", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early_exit_20250908_layers_5_big:v0')
+    #model = load_model_from_wandb(model, model_path = "models/sft_model_2", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early_exit_20250908_layers_5_big:v0')
 
-    #model = load_model(model, model_path)
+    model = load_model(model, model_path)
 
     system_prompt = 'I am going to give you a math word problem. Solve it step by step, showing your reasoning. After your work, provide your final numerical answer.'
     
