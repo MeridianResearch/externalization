@@ -123,7 +123,7 @@ Overall: X/40
 Brief explanation: [your reasoning]
 """
     
-    judge_model = get_inspect_model("openai/gpt-4")
+    judge_model = get_inspect_model("openai/gpt-5")
     eval_result = await judge_model.generate(eval_prompt)
     
     eval_text = eval_result.completion
@@ -165,7 +165,6 @@ Brief explanation: [your reasoning]
 
 
 def clean_response(response: str, prompt: str) -> str:
-    """Clean the response by removing prompt and special tokens"""
     response = response[len(prompt):]
     response = response.replace('<｜begin▁of▁sentence｜>', '').replace('｜begin▁of▁sentence｜', '')
     response = response.replace('<｜end▁of▁sentence｜>', '').replace('｜end▁of▁sentence｜', '')
@@ -189,6 +188,7 @@ async def evaluate_model(model_path: str, kl_factor: str, samples: List[Dict],
     model = replace_attention_layers(base_model, config['lora'], device)
     model = load_model(model, model_path)
     set_transformer_early_exit_mode(model, 'free_generate')
+    #set_transformer_early_exit_mode(model, 'sft_teacher')
     
     if torch.cuda.is_available():
         print(f"GPU memory after loading: {torch.cuda.memory_allocated()/1024**3:.2f} GB allocated")
@@ -214,8 +214,46 @@ async def evaluate_model(model_path: str, kl_factor: str, samples: List[Dict],
         
         cleaned_response = clean_response(response, prompt)
         
+        exit_rate_tokens = 0.0
+        avg_computation = 0.0
+        layer_distribution = {}
+        
+        if len(exit_info) >= 2 and hasattr(exit_info[1], 'shape') and model.early_exit_mode == 'free_generate':
+            exit_layers = exit_info[1]
+            
+            if len(exit_layers.shape) > 1:
+                num_tokens = exit_layers.shape[1]
+                exit_layers_flat = exit_layers.flatten()
+            else:
+                num_tokens = len(exit_layers)
+                exit_layers_flat = exit_layers
+            
+            finite_exits = exit_layers_flat[exit_layers_flat != float('inf')]
+            unique_layers, counts = torch.unique(finite_exits, return_counts=True)
+            
+            for layer, count in zip(unique_layers, counts):
+                layer_idx = int(layer.item())
+                count_val = count.item()
+                layer_distribution[layer_idx] = count_val
+            
+            early_exits_count = len(finite_exits)
+            exit_rate_tokens = early_exits_count / num_tokens if num_tokens > 0 else 0.0
+            
+            total_layers = model.config.num_hidden_layers  # e.g., 28
+            
+            computation_per_token = []
+            for layer_idx in exit_layers_flat:
+                if layer_idx == float('inf'):
+                    computation_per_token.append(1.0)
+                else:
+                    layers_used = int(layer_idx.item()) + 1  # +1 because layer indices are 0-indexed
+                    computation_per_token.append(layers_used / total_layers)
+            
+            avg_computation = sum(computation_per_token) / len(computation_per_token) if computation_per_token else 1.0
+        
         try:
             coherence_result = await evaluate_coherence(prompt, cleaned_response)
+            print(f"  Exit Rate (tokens): {exit_rate_tokens:.1%}, Avg Computation: {avg_computation:.2%}")
             print(f"  Coherence: {coherence_result['coherence']}/10, "
                   f"Completeness: {coherence_result['completeness']}/10, "
                   f"Clarity: {coherence_result['clarity']}/10, "
@@ -237,6 +275,9 @@ async def evaluate_model(model_path: str, kl_factor: str, samples: List[Dict],
             'difficulty': difficulty,
             'prompt': prompt,
             'response': cleaned_response,
+            'exit_rate_tokens': exit_rate_tokens,
+            'avg_computation': avg_computation,
+            'layer_distribution': str(layer_distribution),
             'coherence': coherence_result['coherence'],
             'completeness': coherence_result['completeness'],
             'clarity': coherence_result['clarity'],
@@ -260,24 +301,22 @@ async def evaluate_model(model_path: str, kl_factor: str, samples: List[Dict],
     torch.cuda.synchronize()
     
     import gc
-    gc.collect()  
+    gc.collect() 
     
     if torch.cuda.is_available():
         print(f"GPU memory after cleanup: {torch.cuda.memory_allocated()/1024**3:.2f} GB allocated")
     
     return results
 
-
 async def main():
     parser = argparse.ArgumentParser(description='Evaluate coherence across different KL factor models')
-    parser.add_argument('--output_csv', type=str, default='coherence_comparison.csv',
+    parser.add_argument('--output_csv', type=str, default='coherence_comparison_base.csv',
                         help='Output path for the comparison CSV')
-    parser.add_argument('--max_samples', type=int, default=30,
+    parser.add_argument('--max_samples', type=int, default=50,
                         help='Maximum number of samples to evaluate')
     
     args = parser.parse_args()
 
-    # Model configurations
     models = {
         'kl0.25': 'models/early_exit_20251121_kl0.25_layers_5_big',
         'kl0.5': 'models/early_exit_20251121_kl0.5_layers_5_big',
@@ -296,7 +335,14 @@ async def main():
     
     dataset = load_gsm8k_with_difficulty()
     samples = sample_balanced_by_difficulty(dataset, max_samples=args.max_samples)
-    print(f"Selected {len(samples)} samples")
+
+    #existing_df = pd.read_csv('coherence_comparison.csv')
+    #samples = []
+    #for idx, row in existing_df.iterrows():
+    #    samples.append({
+    #        'full_user_prompt': row['prompt'],
+    #        'difficulty_category': row['difficulty']
+    #    })
     
     all_results = {}
     for kl_factor, model_path in models.items():
@@ -329,6 +375,9 @@ async def main():
     for kl_factor, results in all_results.items():
         for i, result in enumerate(results):
             base_df.loc[i, f'{kl_factor}_response'] = result['response']
+            base_df.loc[i, f'{kl_factor}_exit_rate_tokens'] = result['exit_rate_tokens']
+            base_df.loc[i, f'{kl_factor}_avg_computation'] = result['avg_computation']
+            base_df.loc[i, f'{kl_factor}_layer_distribution'] = result['layer_distribution']
             base_df.loc[i, f'{kl_factor}_coherence'] = result['coherence']
             base_df.loc[i, f'{kl_factor}_completeness'] = result['completeness']
             base_df.loc[i, f'{kl_factor}_clarity'] = result['clarity']
@@ -337,6 +386,29 @@ async def main():
             base_df.loc[i, f'{kl_factor}_explanation'] = result['explanation']
     
     base_df.to_csv(args.output_csv, index=False)
+    print(f"\n{'='*80}")
+    print(f"Results saved to {args.output_csv}")
+    print(f"{'='*80}\n")
+
+    print("\nSummary Statistics:")
+    print("-" * 80)
+    for kl_factor in all_results.keys():
+        avg_exit_rate = base_df[f'{kl_factor}_exit_rate_tokens'].mean()
+        avg_computation = base_df[f'{kl_factor}_avg_computation'].mean()
+        avg_coherence = base_df[f'{kl_factor}_coherence'].mean()
+        avg_completeness = base_df[f'{kl_factor}_completeness'].mean()
+        avg_clarity = base_df[f'{kl_factor}_clarity'].mean()
+        avg_no_rep = base_df[f'{kl_factor}_no_repetition'].mean()
+        avg_overall = base_df[f'{kl_factor}_average'].mean()
+        
+        print(f"\n{kl_factor.upper()}:")
+        print(f"  Exit Rate (tokens):  {avg_exit_rate:.1%}")
+        print(f"  Avg Computation:     {avg_computation:.1%}")
+        print(f"  Coherence:           {avg_coherence:.2f}/10")
+        print(f"  Completeness:        {avg_completeness:.2f}/10")
+        print(f"  Clarity:             {avg_clarity:.2f}/10")
+        print(f"  No Repetition:       {avg_no_rep:.2f}/10")
+        print(f"  Average Score:       {avg_overall:.2f}/10")
 
 
 if __name__ == "__main__":
