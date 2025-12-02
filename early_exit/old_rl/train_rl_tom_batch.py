@@ -24,8 +24,14 @@ from shared_utils.load import get_tokenizer, configs_from_yaml
 #from shared_utils.data import CSVPromptDataset
 from torch.nn.utils.rnn import pad_sequence
 
+from transformers import get_cosine_schedule_with_warmup
+import math
+
 
 device = "cuda"
+if torch.cuda.is_available():
+    torch.cuda.set_device(0)
+
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
 sft_model_path = "models/early_exit_20251002_layers_5_big"  # TODO: set path to SFT checkpoint
@@ -33,10 +39,10 @@ sft_model_path = "models/early_exit_20251002_layers_5_big"  # TODO: set path to 
 RL_HPARAMS = RLHyperparams()
 training_steps_per_rollout = 1
 
-BATCH_SIZE = 4
+BATCH_SIZE = 8
 
-save_freq = 250
-save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}"
+save_freq = 100
+save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}_n2_k8_sched"
 
 # --- Models (schema) ---
 tokenizer = get_tokenizer(model_name)
@@ -78,6 +84,14 @@ def main_rl_training():
                 raise ValueError(f"Unknown trainable parameter: {name}")
                 
     optimizer = Adam([ {'params': lora_params, 'lr': 1e-4}, {'params': exit_decision_params, 'lr': 1e-5} ])
+    num_training_steps = len(dataloader) * training_steps_per_rollout
+    warmup_steps = max(1, int(0.1 * num_training_steps))
+    
+    scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=num_training_steps,
+    )
     #optimizer = Adam(filter(lambda p: p.requires_grad, student.parameters()), lr=1e-5)
     # we use https://huggingface.co/docs/trl/rloo_trainer  as an inspiration for logging. 
 
@@ -325,6 +339,7 @@ def main_rl_training():
                         })
 
         optimizer.step()
+        scheduler.step()
 
 
         # 7) Logging
