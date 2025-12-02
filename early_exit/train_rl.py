@@ -10,6 +10,11 @@ import asyncio
 import pandas as pd
 from datetime import datetime
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json, save_model
+from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions_batched, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty
 from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json, save_model, CSVPromptDataset
 from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty, weighted_sft_loss
 from early_exit.rl_types import RLHyperparams, RolloutBatch
@@ -102,6 +107,7 @@ def main_rl_training():
     run = wandb.init(
         project="early-exit-RL-test",
         entity="vkarthik095-university-of-amsterdam",
+        name=f"k={RL_HPARAMS.k}",
         config=dict(
             **config,
             dataset_type=DATASET_TYPE,
@@ -215,11 +221,13 @@ def train_single_sample_loop(student, reference, optimizer, train_dataset, datal
             difficulty_category = example['difficulty_category']
 
         # 1) Rollouts (student free-generate K)
-        completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k, 
+        completions, exit_info = generate_k_completions_batched(student, [prompt], k=RL_HPARAMS.k, 
                                                         tokenizer=tokenizer, config=config, device=device, 
                                                         system_prompt = system_prompt)
         input_prompt_length = get_input_prompt_length(tokenizer, prompt, system_prompt = system_prompt)  # TODO: very hacky, do it in a cleaner way
         generated_attention_mask = create_attention_mask_from_tokens(completions['tokens'], tokenizer.pad_token_id)[:, input_prompt_length:]
+        
+
         assert generated_attention_mask.sum(-1).tolist() == [len(item) for item in exit_info['prescribed_exit_layers']]
         
         print(f"Input prompt length (in tokens): {input_prompt_length}")

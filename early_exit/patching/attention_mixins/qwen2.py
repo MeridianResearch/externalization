@@ -154,7 +154,10 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         else:
             raise ValueError(f"Unexpected attention return format: {len(attn_result)} values")
 
-        hidden_states = torch.where(unfrozen_elements.unsqueeze(-1), residual + hidden_states, residual)
+        mask = unfrozen_elements
+        for _ in range(residual.ndim - mask.ndim):
+            mask = mask.unsqueeze(-1)
+        hidden_states = torch.where(mask, residual + hidden_states, residual)
         
 
         # Fully Connected
