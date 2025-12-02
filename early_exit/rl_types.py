@@ -19,10 +19,10 @@ class RLHyperparams:
     - sample_log_seed: optional seed for reproducible sample selection
     """
     batch_size: int = 1
-    k: int = 3
-    beta_kl: float = 0.2
-    lambda_exit: float = 0.5
-    sample_log_interval: int = 25
+    k: int = 2
+    beta_kl: float = 0.1
+    lambda_exit: float = 0.0
+    sample_log_interval: int = 5
     sample_max_rows: int = 2
     sample_log_selection: str = "first"
     sample_log_seed: Optional[int] = None

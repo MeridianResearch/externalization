@@ -1,6 +1,7 @@
 import re
 import torch
 from torch import Tensor as _T
+from rapidfuzz.distance import Levenshtein as L
 
 '''def extract_solution(solution_str, method="strict"):
     assert method in ["strict", "flexible"]
@@ -105,6 +106,100 @@ def compute_verification_rewards(completions_tokens, completions_text, correct_a
             rewards[i] = 0.0  #wrong answer
     
     return rewards
+
+def extract_solution_text(solution_str: str, method: str = "strict"):
+    """
+    strict   : extract the text after the LAST 'Answer:' line.
+    flexible : return the LAST non-empty line of the text.
+    """
+    assert method in ["strict", "flexible"]
+
+    if not isinstance(solution_str, str) or not solution_str.strip():
+        return None
+
+    s = solution_str
+
+    s = s.replace("<｜begin▁of▁sentence｜>", "").replace("<｜end▁of▁sentence｜>", "")
+    s = re.sub(r"<think>.*?</think>", "", s, flags=re.S | re.I)
+    s = re.sub(r"<\|.*?\|>", "", s, flags=re.S)  # remove <|...|> tokens
+
+    if method == "strict":
+        parts = re.split(r"<\|\s*Assistant\s*\|>", s, flags=re.I)
+        if len(parts) >= 2:
+            s = parts[-1]
+
+        anchor = 0
+        rs = list(re.finditer(r"^\s*reasoning\s*:\s*", s, flags=re.I | re.M))
+        if rs:
+            anchor = max(anchor, rs[-1].end())
+        s_tail = s[anchor:] if anchor > 0 else s
+
+        matches = list(re.finditer(
+            r"^\s*(?:\*\*\s*)?answer(?:\s*\*\*)?\s*[:：]\s*(.+?)\s*$",
+            s_tail, flags=re.I | re.M
+        ))
+        if not matches:
+            return None
+
+        ans = matches[-1].group(1).strip()
+        ans = re.sub(r"^\*\*|\*\*$", "", ans).strip()
+        ans = ans.replace("<｜end▁of▁sentence｜>", "").strip()
+        return ans or None
+
+    else:  # method == "flexible"
+        lines = [ln.strip() for ln in s.splitlines() if ln.strip()]
+        return (lines[-1] if lines else None)
+
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", str(s).strip().lower())
+
+def compute_verification_rewards_text(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):
+    rewards = torch.zeros(len(completions_text), dtype=torch.float32)
+
+    format_ok = []
+    sims = []
+    exacts = []
+
+    for i, _ in enumerate(completions_text):
+        completion_tokens = completions_tokens[i][input_prompt_length:] #remove prompt
+        completion_text = tokenizer.decode(completion_tokens, skip_special_tokens=True) #tokens to text
+
+        ground_truth_idx = 0 if len(correct_answers) == 1 else (i % len(correct_answers))
+        ground_truth = _norm(str(correct_answers[ground_truth_idx]))
+
+        extracted_answer = extract_solution_text(completion_text, method="strict")
+        extracted_answer_flexible = extract_solution_text(completion_text, method="flexible")
+
+        if extracted_answer is not None:
+            p = _norm(extracted_answer)
+            if p == ground_truth:
+                rewards[i] = 1.0
+                fmt_ok, sim, ex = True, 1.0, True
+            else:
+                sim = float(L.normalized_similarity(p, ground_truth)) / 100.0
+                rewards[i] = sim
+                fmt_ok, ex = True, False
+        else:
+            if extracted_answer_flexible is None:
+                rewards[i] = -1.0
+                fmt_ok, sim, ex = False, 0.0, False
+            else:
+                p = _norm(extracted_answer_flexible)
+                if p == ground_truth:
+                    rewards[i] = 0.5
+                    fmt_ok, sim, ex = False, 1.0, True
+                else:
+                    sim = float(L.normalized_similarity(p, ground_truth)) / 100.0
+                    rewards[i] = -1.0 + sim
+                    fmt_ok, ex = False, False
+
+        format_ok.append(fmt_ok)
+        sims.append(sim)
+        exacts.append(ex)
+
+    aux = {'format_ok': torch.tensor(format_ok, dtype=torch.bool), 'similarity': torch.tensor(sims, dtype=torch.float32), 'exact': torch.tensor(exacts, dtype=torch.bool)}
+    return rewards, aux
+
 
 '''
 def compute_verification_rewards(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):

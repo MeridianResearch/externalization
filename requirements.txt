@@ -6,3 +6,4 @@ wandb
 datasets
 inspect_ai
 openai
+rapidfuzz
