@@ -1,6 +1,7 @@
 import re
 import torch
 from torch import Tensor as _T
+from rapidfuzz.distance import Levenshtein as L
 
 '''def extract_solution(solution_str, method="strict"):
     assert method in ["strict", "flexible"]
@@ -155,28 +156,49 @@ def _norm(s: str) -> str:
 def compute_verification_rewards_text(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):
     rewards = torch.zeros(len(completions_text), dtype=torch.float32)
 
-    for i, _ in enumerate(completions_text):
+    format_ok = []
+    sims = []
+    exacts = []
 
+    for i, _ in enumerate(completions_text):
         completion_tokens = completions_tokens[i][input_prompt_length:] #remove prompt
         completion_text = tokenizer.decode(completion_tokens, skip_special_tokens=True) #tokens to text
 
-        # ground truth (K completions per 1 prompt)
-        ground_truth_idx = i // len(correct_answers) if len(correct_answers) > 1 else 0
+        ground_truth_idx = 0 if len(correct_answers) == 1 else (i % len(correct_answers))
         ground_truth = _norm(str(correct_answers[ground_truth_idx]))
 
-        # extract (do NOT normalize yet; we need None logic)
         extracted_answer = extract_solution_text(completion_text, method="strict")
-        extracted_answer_flexible   = extract_solution_text(completion_text, method="flexible")
+        extracted_answer_flexible = extract_solution_text(completion_text, method="flexible")
 
         if extracted_answer is not None:
-            rewards[i] = 1.0 if _norm(extracted_answer) == ground_truth else 0.0
+            p = _norm(extracted_answer)
+            if p == ground_truth:
+                rewards[i] = 1.0
+                fmt_ok, sim, ex = True, 1.0, True
+            else:
+                sim = float(L.normalized_similarity(p, ground_truth)) / 100.0
+                rewards[i] = sim
+                fmt_ok, ex = True, False
         else:
             if extracted_answer_flexible is None:
-                rewards[i] = -1.0                        
+                rewards[i] = -1.0
+                fmt_ok, sim, ex = False, 0.0, False
             else:
-                rewards[i] = 0.5 if _norm(extracted_answer_flexible) == ground_truth else -1.0
+                p = _norm(extracted_answer_flexible)
+                if p == ground_truth:
+                    rewards[i] = 0.5
+                    fmt_ok, sim, ex = False, 1.0, True
+                else:
+                    sim = float(L.normalized_similarity(p, ground_truth)) / 100.0
+                    rewards[i] = -1.0 + sim
+                    fmt_ok, ex = False, False
 
-    return rewards
+        format_ok.append(fmt_ok)
+        sims.append(sim)
+        exacts.append(ex)
+
+    aux = {'format_ok': torch.tensor(format_ok, dtype=torch.bool), 'similarity': torch.tensor(sims, dtype=torch.float32), 'exact': torch.tensor(exacts, dtype=torch.bool)}
+    return rewards, aux
 
 
 '''

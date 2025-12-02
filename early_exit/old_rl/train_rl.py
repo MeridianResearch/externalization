@@ -6,8 +6,6 @@
 
 import torch
 from torch.optim import Adam
-from torch.utils.data import DataLoader
-
 import wandb
 from datasets import load_dataset
 from typing import Optional
@@ -16,19 +14,18 @@ import pandas as pd
 from datetime import datetime
 
 from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json, save_model
-from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_tom, compute_accuracy_by_difficulty
+from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty
 from early_exit.rl_types import RLHyperparams, RolloutBatch
-from early_exit.rewards import compute_verification_rewards_text, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
+from early_exit.rewards import compute_verification_rewards, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 from shared_utils.load import get_tokenizer, configs_from_yaml
-from shared_utils.data import CSVPromptDataset
 from torch.nn.utils.rnn import pad_sequence
 
 
 device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
-sft_model_path = "models/early_exit_20251002_layers_5_big"  # TODO: set path to SFT checkpoint
+sft_model_path = "models/early_exit_20250908_layers_5_big"  # TODO: set path to SFT checkpoint
 
 RL_HPARAMS = RLHyperparams()
 training_steps_per_rollout = 4
@@ -42,21 +39,17 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
-
-#student = load_model_from_wandb(student, model_path = "models/sft_model_2", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early_exit_20250908_layers_5_big:v0')
-student = load_model(student, sft_model_path)
+# TODO: Change artifact path to sft trained gsm-8k model
+student = load_model_from_wandb(student, model_path = "models/sft_model_2", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early_exit_20250908_layers_5_big:v0')
+#student = load_model(student, sft_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
 reference.eval()
+# TODO: ensure no early-exit logic is active for reference model
 
 # Dataset
-batch_size = 1
-dataset_path = "results_and_data/early_exit_sft_dataset/test/tom_rl.csv"
-prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config_tom.json"
-
-dataset = CSVPromptDataset(dataset_path, prompt_config_path)
-dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=dataset.collate_fn, shuffle=False)
+dataset = load_gsm8k_with_difficulty()
 
 
 def main_rl_training():
@@ -69,7 +62,6 @@ def main_rl_training():
     # we use https://huggingface.co/docs/trl/rloo_trainer  as an inspiration for logging. 
 
     global_training_step = 0
-    table_history = []
 
     run = wandb.init(
         project="early-exit-RL-test",
@@ -122,7 +114,7 @@ def main_rl_training():
                 'samples/prompt_text': 'Original input prompt text for each sample.',
                 'samples/completion_text': 'Raw generated completion text for each sample.',
                 'samples/correct_answer': 'Correct answer for the prompt (parsed from the dataset).',
-                #'samples/difficulty_category': 'Difficulty category: Easy, Medium, Hard',
+                'samples/difficulty_category': 'Difficulty category: Easy, Medium, Hard',
                 'samples/verify_reward': 'Verification reward for the sample using the same rules as rewards/verify_mean.',
                 'samples/kl_estimate': 'Token-level log-probability gap mean (student − reference) for the sample.',
                 'samples/avg_exit_layer': 'Normalized average exit layer used for the sample (0..1).',
@@ -149,18 +141,21 @@ def main_rl_training():
     for pattern in ['objective/*', 'rewards/*', 'exit/*', 'loss/*', 'completions/*', 'training/*', 'samples/*', 'accuracy/*']:
         wandb.define_metric(pattern, step_metric='training/episode')
 
+    # TODO: batching. For simplicity, treat batch_size = 1 here.
+    train_dataset = dataset["train"]
+    table_history = []
 
-    for i, prompt_batch in enumerate(dataloader):
+    for i, example in enumerate(train_dataset):
 
-        prompt = prompt_batch.full_user_prompt[0]
-        correct_answer = prompt_batch.correct_answers[0]
-        #difficulty_category = example['difficulty_category']
+        prompt = example["question"]
+        correct_answer = example["answer"]
+        difficulty_category = example['difficulty_category']
 
         # 1) Rollouts (student free-generate K)
         completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k, 
                                                         tokenizer=tokenizer, config=config, device=device, 
-                                                        system_prompt = dataset.system_prompt)  # TODO
-        input_prompt_length = get_input_prompt_length(tokenizer, prompt, system_prompt = dataset.system_prompt)  # TODO: very hacky, do it in a cleaner way
+                                                        system_prompt = RL_HPARAMS.system_prompt)  # TODO
+        input_prompt_length = get_input_prompt_length(tokenizer, prompt, system_prompt = RL_HPARAMS.system_prompt)  # TODO: very hacky, do it in a cleaner way
         generated_attention_mask = create_attention_mask_from_tokens(completions['tokens'], tokenizer.pad_token_id)[:, input_prompt_length:]
         assert generated_attention_mask.sum(-1).tolist() == [len(item) for item in exit_info['prescribed_exit_layers']]
         
@@ -174,13 +169,13 @@ def main_rl_training():
         prescribed_exit_layers = pad_sequence(exit_info['prescribed_exit_layers'], batch_first=True, padding_value=torch.inf)
 
         # 3) Reward components (computed once per rollout)
-        verify = compute_verification_rewards_text(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
+        verify = compute_verification_rewards(completions['tokens'], completions['texts'], [correct_answer] * RL_HPARAMS.k, input_prompt_length, tokenizer)
         avg_exit_layer = compute_avg_exit_layer(exit_info['prescribed_exit_layers'], student) #need to pass model to get total layers
 
         # 3.1) Compute sample labels
         sample_labels = compute_sample_labels(verify)
 
-        difficulty_categories = ['easy'] * RL_HPARAMS.k
+        difficulty_categories = [difficulty_category] * RL_HPARAMS.k
         #compute accuracy metrics by difficulty (all samples have same difficulty as same prompt)
         difficulty_accuracies = compute_accuracy_by_difficulty(verify, difficulty_categories)
 
@@ -330,12 +325,13 @@ def main_rl_training():
                         'coherence/batch_no_repetition': avg_no_repetition,
                         'coherence/batch_average': avg_overall,
                     })
-
+    
                     columns = [
                         'episode',
                         'samples/prompt_text',
                         'samples/completion_text',
                         'samples/correct_answer',
+                        'samples/difficulty_category',
                         'samples/verify_reward',
                         'samples/kl_estimate',
                         'samples/avg_exit_layer',
@@ -361,7 +357,8 @@ def main_rl_training():
                             global_training_step,
                             prompt,
                             completions['texts'][row_idx],
-                            correct_answer,
+                            extract_solution(correct_answer),
+                            difficulty_category,
                             float(verify[row_idx].item()),
                             float(kl_tokens[row_idx].item()),
                             float(avg_exit_layer[row_idx].item()),
