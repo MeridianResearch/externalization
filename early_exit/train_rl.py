@@ -29,15 +29,15 @@ model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
 sft_model_path = "models/sft_model"  # TODO: set path to SFT checkpoint
 
-DATASET_TYPE = "gsm8k" # TODO: set to "gsm8k" or "tom"
+DATASET_TYPE = "tom" # TODO: set to "gsm8k" or "tom"
 
-BATCH_SIZE = 1 # TODO
+BATCH_SIZE = 2 # TODO
 
 RL_HPARAMS = RLHyperparams()
 training_steps_per_rollout = 1
 
-save_freq = 250
-save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}_{DATASET_TYPE}_batch{BATCH_SIZE}"
+save_freq = 100
+save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}_{DATASET_TYPE}_batch{BATCH_SIZE}_k{RL_HPARAMS.k}_lambda{RL_HPARAMS.lambda_exit}"
 
 # TOM dataset-specific paths
 TOM_DATASET_PATH = "results_and_data/early_exit_sft_dataset/test/tom_rl.csv"
@@ -51,8 +51,8 @@ student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
 
 # TODO: Choose which way to load model from below 2
-#student = load_model_from_wandb(student, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/early_exit_20250908_layers_5_big:v0')
-student = load_model(student, sft_model_path)
+student = load_model_from_wandb(student, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/my-model:v0')
+#student = load_model(student, sft_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
@@ -107,7 +107,7 @@ def main_rl_training():
     run = wandb.init(
         project="early-exit-RL-test",
         entity="vkarthik095-university-of-amsterdam",
-        name=f"k={RL_HPARAMS.k}",
+        name=f"k={RL_HPARAMS.k}_n={BATCH_SIZE}_{DATASET_TYPE}_lambda={RL_HPARAMS.lambda_exit}_beta={RL_HPARAMS.beta_kl}",
         config=dict(
             **config,
             dataset_type=DATASET_TYPE,
@@ -120,6 +120,7 @@ def main_rl_training():
                 'objective/rlhf_reward': 'Mean total reward per step: verification reward minus beta_kl×token-level KL estimate and lambda_exit×normalized average exit layer.',
                 'objective/kl': 'Mean over generated tokens of (log p_student − log p_reference). This is a token-level log-probability gap, not the full softmax KL.',
                 'objective/non_score_reward': 'Mean of the penalty-only terms (− beta_kl×KL − lambda_exit×avg_exit). Higher magnitude indicates stronger regularization pressure.',
+                'objective/compute_total': 'Rough total compute: (average exit layer × mean completion length × k). Measures approximate computational cost.',
                 'rewards/verify_mean': "Mean verification reward from the final '#### <answer>' extraction. Exact match = 1.0, flexible numeric match = 0.5, wrong = 0.0, no answer/format errors = −1.0, minus small format penalties.",
                 'rewards/kl_penalty_component_mean': 'Mean of the KL penalty contribution beta_kl×(token-level KL estimate).',
                 'rewards/exit_layer_penalty_component_mean': 'Mean of the exit-layer penalty contribution lambda_exit×normalized average exit layer.',
@@ -336,6 +337,7 @@ def train_single_sample_loop(student, reference, optimizer, train_dataset, datal
                     'objective/rlhf_reward': reward.mean().item(),
                     'objective/kl': kl_tokens.mean().item(),
                     'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
+                    'objective/compute_total': avg_exit_layer.mean().item() * generated_lens.mean().item() * RL_HPARAMS.k,
                     
                     # Exit metrics
                     'exit/min_layer': avg_exit_layer.min().item(),
@@ -681,6 +683,7 @@ def train_batched_loop(student, reference, optimizer, dataloader,
                 'objective/rlhf_reward': reward.mean().item(),
                 'objective/kl': kl_tokens.mean().item(),
                 'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
+                'objective/compute_total': avg_exit_layer.mean().item() * generated_lens.mean().item() * RL_HPARAMS.k,
                 
                 # Exit metrics
                 'exit/min_layer': avg_exit_layer.min().item(),
