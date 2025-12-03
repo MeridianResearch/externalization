@@ -337,7 +337,7 @@ def train_single_sample_loop(student, reference, optimizer, train_dataset, datal
                     'objective/rlhf_reward': reward.mean().item(),
                     'objective/kl': kl_tokens.mean().item(),
                     'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
-                    'objective/compute_total': avg_exit_layer.mean().item() * generated_lens.mean().item() * RL_HPARAMS.k,
+                    'objective/compute_total': avg_exit_layer.mean().item() * generated_lens.mean().item(),
                     
                     # Exit metrics
                     'exit/min_layer': avg_exit_layer.min().item(),
@@ -683,7 +683,7 @@ def train_batched_loop(student, reference, optimizer, dataloader,
                 'objective/rlhf_reward': reward.mean().item(),
                 'objective/kl': kl_tokens.mean().item(),
                 'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
-                'objective/compute_total': avg_exit_layer.mean().item() * generated_lens.mean().item() * RL_HPARAMS.k,
+                'objective/compute_total': avg_exit_layer.mean().item() * generated_lens.mean().item(),
                 
                 # Exit metrics
                 'exit/min_layer': avg_exit_layer.min().item(),
