@@ -28,16 +28,17 @@ device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
 sft_model_path = "models/sft_model"  # TODO: set path to SFT checkpoint
+rl_model_path = "models/rl_20251203_tom_batch4_k6_lambda0.0/step_150"
 
 DATASET_TYPE = "tom" # TODO: set to "gsm8k" or "tom"
 
-BATCH_SIZE = 2 # TODO
+BATCH_SIZE = 4 # TODO
 
 RL_HPARAMS = RLHyperparams()
 training_steps_per_rollout = 1
 
-save_freq = 100
-save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}_{DATASET_TYPE}_batch{BATCH_SIZE}_k{RL_HPARAMS.k}_lambda{RL_HPARAMS.lambda_exit}"
+save_freq = 50
+save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}_{DATASET_TYPE}_rlmodel_batch{BATCH_SIZE}_k{RL_HPARAMS.k}_lambda{RL_HPARAMS.lambda_exit}"
 
 # TOM dataset-specific paths
 TOM_DATASET_PATH = "results_and_data/early_exit_sft_dataset/test/tom_rl.csv"
@@ -50,9 +51,10 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
 
-# TODO: Choose which way to load model from below 2
-student = load_model_from_wandb(student, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/my-model:v0')
+# TODO: Choose which way to load model from below
+#student = load_model_from_wandb(student, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/my-model:v0')
 #student = load_model(student, sft_model_path)
+student = load_model(student, rl_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
@@ -107,7 +109,7 @@ def main_rl_training():
     run = wandb.init(
         project="early-exit-RL-test",
         entity="vkarthik095-university-of-amsterdam",
-        name=f"k={RL_HPARAMS.k}_n={BATCH_SIZE}_{DATASET_TYPE}_lambda={RL_HPARAMS.lambda_exit}_beta={RL_HPARAMS.beta_kl}",
+        name=f"k={RL_HPARAMS.k}_n={BATCH_SIZE}_{DATASET_TYPE}_rl_lambda={RL_HPARAMS.lambda_exit}_beta={RL_HPARAMS.beta_kl}",
         config=dict(
             **config,
             dataset_type=DATASET_TYPE,
@@ -518,7 +520,7 @@ def train_batched_loop(student, reference, optimizer, dataloader,
             correct_answer = correct_answers[i]
 
             # 1) Rollouts
-            completions, exit_info = generate_k_completions(student, [prompt], k=RL_HPARAMS.k, 
+            completions, exit_info = generate_k_completions_batched(student, [prompt], k=RL_HPARAMS.k, 
                                                         tokenizer=tokenizer, config=config, device=device, 
                                                         system_prompt = system_prompt)
             input_prompt_length = get_input_prompt_length(tokenizer, prompt, system_prompt=system_prompt)
@@ -634,21 +636,33 @@ def train_batched_loop(student, reference, optimizer, dataloader,
                         acc_difficulty_sums[k] = acc_difficulty_sums.get(k, 0.0) + float(v)
                     acc_count += 1
 
-                    for k_idx in range(RL_HPARAMS.k):
-                        sample_rows.append({
-                            "episode": global_training_step + 1,
-                            "prompt_text": prompt,
-                            "completion_text": completions['texts'][k_idx],
-                            "correct_answer": correct_answer,
-                            "verify_reward": float(verify[k_idx].item()),
-                            "kl_estimate": float(kl_tokens[k_idx].item()),
-                            "avg_exit_layer": float(avg_exit_layer[k_idx].item()),
-                            "gen_len": int(gen_lens[k_idx].item()),
-                            "contains_eos": bool(contains_eos[k_idx].item()),
-                            "selection_index": int(k_idx),
-                            "correctness_label": sample_labels['labels'][k_idx]['correctness'],
-                            "format_label": sample_labels['labels'][k_idx]['format_quality'],
-                        })
+            with torch.no_grad():
+                tokens_tensor = completions['tokens']
+                pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else -1
+                eos_id = tokenizer.eos_token_id if tokenizer.eos_token_id is not None else -1
+                seq_lens = (tokens_tensor != pad_id).sum(dim=1).float()
+                gen_lens = (seq_lens - input_prompt_length).clamp_min(0)
+                
+                if eos_id != -1:
+                    contains_eos = (tokens_tensor == eos_id).any(dim=1)
+                else:
+                    contains_eos = torch.zeros(tokens_tensor.shape[0], dtype=torch.bool, device=tokens_tensor.device)
+                
+                for k_idx in range(RL_HPARAMS.k):
+                    sample_rows.append({
+                        "episode": global_training_step + 1,
+                        "prompt_text": prompt,
+                        "completion_text": completions['texts'][k_idx],
+                        "correct_answer": correct_answer,
+                        "verify_reward": float(verify[k_idx].item()),
+                        "kl_estimate": float(kl_tokens[k_idx].item()),
+                        "avg_exit_layer": float(avg_exit_layer[k_idx].item()),
+                        "gen_len": int(gen_lens[k_idx].item()),
+                        "contains_eos": bool(contains_eos[k_idx].item()),
+                        "selection_index": int(k_idx),
+                        "correctness_label": sample_labels['labels'][k_idx]['correctness'],
+                        "format_label": sample_labels['labels'][k_idx]['format_quality'],
+                    })
 
         optimizer.step()
 
@@ -751,12 +765,26 @@ def train_batched_loop(student, reference, optimizer, dataloader,
                 })
                 
                 for r, c in zip(rows_to_log, coherence_batch_results):
-                    r["coherence_coherence"] = int(c["coherence"])
-                    r["coherence_completeness"] = int(c["completeness"])
-                    r["coherence_clarity"] = int(c["clarity"])
-                    r["coherence_no_repetition"] = int(c["no_repetition"])
-                    r["coherence_average"] = float(c["average"])
-                    r["coherence_explanation"] = c["explanation"]
+                    table_history.append([
+                        r["episode"],
+                        r["prompt_text"],
+                        r["completion_text"],
+                        r["correct_answer"],
+                        r["verify_reward"],
+                        r["kl_estimate"],
+                        r["avg_exit_layer"],
+                        r["gen_len"],
+                        r["contains_eos"],
+                        r["selection_index"],
+                        r["correctness_label"],
+                        r["format_label"],
+                        int(c["coherence"]),
+                        int(c["completeness"]),
+                        int(c["clarity"]),
+                        int(c["no_repetition"]),
+                        float(c["average"]),
+                        c["explanation"]
+                    ])
             
                 columns = [
                     'episode',
@@ -780,27 +808,8 @@ def train_batched_loop(student, reference, optimizer, dataloader,
                 ]
             
                 table = wandb.Table(columns=columns)
-                for r in rows_to_log:
-                    table.add_data(
-                        r["episode"],
-                        r["prompt_text"],
-                        r["completion_text"],
-                        r["correct_answer"],
-                        r["verify_reward"],
-                        r["kl_estimate"],
-                        r["avg_exit_layer"],
-                        r["gen_len"],
-                        r["contains_eos"],
-                        r["selection_index"],
-                        r["correctness_label"],
-                        r["format_label"],
-                        r.get("coherence_coherence"),
-                        r.get("coherence_completeness"),
-                        r.get("coherence_clarity"),
-                        r.get("coherence_no_repetition"),
-                        r.get("coherence_average"),
-                        r.get("coherence_explanation"),
-                    )
+                for row in table_history:  #table_history, not rows_to_log
+                    table.add_data(*row)
                 log_dict['samples/generations'] = table
 
             wandb.log(log_dict)
