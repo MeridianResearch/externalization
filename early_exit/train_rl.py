@@ -28,7 +28,7 @@ device = "cuda"
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
 sft_model_path = "models/sft_model"  # TODO: set path to SFT checkpoint
-rl_model_path = "models/rl_20251203_tom_batch4_k6_lambda0.0/step_150"
+rl_model_path = "models/rl_20251203_tom_batch4_k6_lambda0/step_150"
 
 DATASET_TYPE = "tom" # TODO: set to "gsm8k" or "tom"
 
@@ -52,7 +52,7 @@ student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
 
 # TODO: Choose which way to load model from below
-#student = load_model_from_wandb(student, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/my-model:v0')
+#student = load_model_from_wandb(student, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit-RL-test/model-checkpoints-lambda-0:v0')
 #student = load_model(student, sft_model_path)
 student = load_model(student, rl_model_path)
 
@@ -76,6 +76,7 @@ if DATASET_TYPE == "gsm8k":
     verification_func = compute_verification_rewards
 elif DATASET_TYPE == "tom":
     dataset = CSVPromptDataset(TOM_DATASET_PATH, TOM_PROMPT_CONFIG_PATH)
+    #dataset.df = dataset.df.iloc[600:].reset_index(drop=True) #for skipping past lambda=0 records
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, collate_fn=dataset.collate_fn, shuffle=False)
     train_dataset = None
     system_prompt = dataset.system_prompt

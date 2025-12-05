@@ -454,7 +454,7 @@ Overall: X/40
 Brief explanation: [your reasoning]
 """
     
-    judge_model = get_inspect_model("openai/gpt-4")
+    judge_model = get_inspect_model("openai/gpt-5")
     eval_result = await judge_model.generate(eval_prompt)
     
     eval_text = eval_result.completion
@@ -464,19 +464,29 @@ Brief explanation: [your reasoning]
     clarity_score = 0
     no_repetition_score = 0
     overall_score = 0
+
+    def safe_parse_score(line: str, prefix: str) -> int:
+        try:
+            if line.startswith(prefix):
+                score_part = line.split(':')[1].strip().split('/')[0].strip()
+                if score_part:
+                    return int(score_part)
+        except (IndexError, ValueError) as e:
+            print(f"Warning: Failed to parse line '{line}': {e}")
+        return 0
     
     for line in eval_text.split('\n'):
         line = line.strip()
         if line.startswith('Coherence:'):
-            coherence_score = int(line.split(':')[1].strip().split('/')[0])
+            coherence_score = safe_parse_score(line, 'Coherence:')
         elif line.startswith('Completeness:'):
-            completeness_score = int(line.split(':')[1].strip().split('/')[0])
+            completeness_score = safe_parse_score(line, 'Completeness:')
         elif line.startswith('Clarity:'):
-            clarity_score = int(line.split(':')[1].strip().split('/')[0])
+            clarity_score = safe_parse_score(line, 'Clarity:')
         elif line.startswith('No Repetition:'):
-            no_repetition_score = int(line.split(':')[1].strip().split('/')[0])
+            no_repetition_score = safe_parse_score(line, 'No Repetition:')
         elif line.startswith('Overall:'):
-            overall_score = int(line.split(':')[1].strip().split('/')[0])
+            overall_score = safe_parse_score(line, 'Overall:')
     
     #extract explanation (everything after "Brief explanation:")
     explanation = ""

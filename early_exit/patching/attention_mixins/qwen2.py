@@ -74,13 +74,18 @@ class Qwen2DecoderLayerFakeAttentionForwardMixin(LayerFakeAttentionForwardMixin)
         else:
             new_hidden_states = outputs
             other_outputs = ()
-        
-        # Apply selective update: only update unfrozen elements
+
+        if unfrozen_elements.ndim == 1:
+            mask = unfrozen_elements.view(bsz, 1, 1)
+        else:
+            mask = unfrozen_elements.unsqueeze(-1)
+            
         final_hidden_states = torch.where(
-            unfrozen_elements.unsqueeze(-1),  # Expand mask to match hidden dimension
+            mask,                              # Expand mask to match hidden dimension
             new_hidden_states,                 # Use new values where unfrozen
             original_hidden_states             # Keep original values where frozen
         )
+        
         
         # Reconstruct outputs with updated hidden states
         final_outputs = (final_hidden_states,) + other_outputs
