@@ -11,7 +11,7 @@ import re
 from shared_utils.load import get_tokenizer, configs_from_yaml
 from shared_utils.generate import generate_text
 #from shared_utils.data import CSVPromptDataset
-from early_exit.util import get_model, load_model, CSVPromptDataset
+from early_exit.util import get_model, load_model, CSVPromptDataset, load_model_from_wandb
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
 
 from inspect_ai import Task, eval
@@ -24,7 +24,7 @@ from inspect_ai.scorer import answer as answer_scorer, accuracy, stderr, mean, m
 base_model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
 device = "cuda"
-model_path = "models/rl_20251023/step_250"
+model_path = "models/rl_model_0_1/step_250"
 
 dataset_path = "results_and_data/early_exit_sft_dataset/test/tom_eval.csv"
 prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config_tom.json"
@@ -39,6 +39,14 @@ config = configs_from_yaml(config_path, tokenizer.eos_token_id)
 base_model = get_model(base_model_name, config['model'], device)
 model = replace_attention_layers(base_model, config['lora'], device)
 model = load_model(model, model_path)
+#model = load_model_from_wandb(model, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/my-model:v0')
+#model = load_model_from_wandb(model, model_path = "models/rl_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit-RL-test/model-checkpoints-lambda-0:v0')
+#model = load_model_from_wandb(model, model_path = "models/rl_model_1_0", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit-RL-test/model-checkpoints-lambda-0:v1')
+#model = load_model_from_wandb(model, model_path = "models/rl_model_0_5", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit-RL-test/model-checkpoints-lambda-0_5:v0')
+#model = load_model_from_wandb(model, model_path = "models/rl_model_0_2", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit-RL-test/model-checkpoints-lambda-0_2:v0')
+#model = load_model_from_wandb(model, model_path = "models/rl_model_0_1", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit-RL-test/model-checkpoints-lambda-0_1:v0')
+
+total_layers = 28 #hardcoded as we know in this case
 
 set_transformer_early_exit_mode(model, 'free_generate')
 #set_transformer_early_exit_mode(model, 'sft_teacher')
@@ -47,13 +55,9 @@ answers_df = pd.read_csv(dataset_path, dtype=str).fillna("")
 gold_answers = answers_df["answer"].tolist()
 
 samples = []
-max_samples = 100
+max_samples = 60
 
 def extract_solution_text(solution_str: str, method: str = "strict"):
-    """
-    strict   : extract the text after the LAST 'Answer:' line.
-    flexible : return the LAST non-empty line of the text.
-    """
     assert method in ["strict", "flexible"]
 
     if not isinstance(solution_str, str) or not solution_str.strip():
@@ -112,6 +116,10 @@ for i, prompt_batch in enumerate(dataloader):
             device=model.device
         )
         response = response[len(prompt):]
+
+        completion_tokens = tokenizer.encode(response, add_special_tokens=False)
+        completion_length = len(completion_tokens)
+        
         response = response.replace('<｜begin▁of▁sentence｜>', '').replace('｜begin▁of▁sentence｜', '')
         response = response.replace('<｜end▁of▁sentence｜>', '').replace('｜end▁of▁sentence｜', '')
         last_asst = response.rfind("<｜Assistant｜>")
@@ -142,11 +150,24 @@ for i, prompt_batch in enumerate(dataloader):
             if len(unique_layers) > 0:
                 for layer, count in zip(unique_layers, counts):
                     layer_distribution[int(layer.item())] = count.item()
+
+            #average computation per token
+            computation_per_token = []
+            for layer_idx in exit_layers_flat:
+                if layer_idx == float('inf'):
+                    computation_per_token.append(1.0)
+                else:
+                    layers_used = int(layer_idx.item()) + 1  # +1 because layer indices are 0-indexed
+                    computation_per_token.append(layers_used / total_layers)
+            
+            avg_computation = sum(computation_per_token) / len(computation_per_token) if computation_per_token else 1.0
+            
         else:
             early_exits = 0
             total_tokens = len(response)
             early_exit_rate = 0
             layer_distribution = {}
+            avg_computation = 1.0
 
     extracted_answer = _norm(extract_solution_text(response, method="strict"))
     ground_truth = _norm(gold_answers[i]) if i < len(gold_answers) else ""
@@ -162,6 +183,8 @@ for i, prompt_batch in enumerate(dataloader):
             "early_exits": early_exits,
             "early_exit_rate": early_exit_rate,
             "layer_distribution": layer_distribution,
+            "avg_computation": avg_computation,
+            "completion_length": completion_length,
             "response": response,
             "ground_truth": ground_truth,
             "extracted_answer": extracted_answer,
@@ -171,7 +194,7 @@ for i, prompt_batch in enumerate(dataloader):
     )
     samples.append(sample)
     
-    print(f"Generated {total_tokens} tokens for response {i+1}/{max_samples}, {early_exits} early exits ({early_exit_rate:.1%})")
+    print(f"Generated {total_tokens} tokens for response {i+1}/{max_samples}, {early_exits} early exits ({early_exit_rate:.1%}), avg_comp: {avg_computation:.3f}, completion_len: {completion_length}")
 
 if not samples:
     print("No samples generated successfully!")
@@ -285,6 +308,20 @@ def early_exit_rate_scorer():
         return Score(value=v, explanation=f"early_exit_rate={v:.6f}")
     return score
 
+@scorer(name="avg_computation", metrics=[mean(), stderr()])
+def avg_computation_scorer():
+    async def score(state, target):
+        v = float(state.metadata.get("avg_computation", 1.0))
+        return Score(value=v, explanation=f"avg_computation={v:.6f}")
+    return score
+
+@scorer(name="completion_length", metrics=[mean(), stderr()])
+def completion_length_scorer():
+    async def score(state, target):
+        v = float(state.metadata.get("completion_length", 0))
+        return Score(value=v, explanation=f"completion_length={v:.0f}")
+    return score
+
 # Create and run task
 task = Task(
     dataset=MemoryDataset(samples),
@@ -293,6 +330,8 @@ task = Task(
         coherence_scorer(),
         tom_accuracy_scorer(),
         early_exit_rate_scorer(),
+        avg_computation_scorer(),
+        completion_length_scorer(),
     ]
 )
 
@@ -330,25 +369,49 @@ total_correct = 0
 total_samples = 0
 all_coherence = []
 all_exit_rates = []
+all_avg_computation = []
+all_total_tokens = []
+
+sample_results = []
 
 for sample in log.samples:
     is_correct = bool(sample.metadata.get('correct', False))
     coherence = sample.scores['coherence_scorer'].as_float()
     exit_rate = sample.scores['early_exit_rate'].as_float()
+    avg_comp = sample.scores['avg_computation'].as_float()
+    total_toks = sample.scores['completion_length'].as_float()
 
     total_samples += 1
     total_correct += int(is_correct)
     all_coherence.append(coherence)
     all_exit_rates.append(exit_rate)
+    all_avg_computation.append(avg_comp)
+    all_total_tokens.append(total_toks)
+
+    sample_results.append({
+        'sample_id': sample.id,
+        'correct': is_correct,
+        'coherence': coherence,
+        'exit_rate': exit_rate,
+        'avg_computation': avg_comp,
+        'total_tokens': total_toks,
+        'extracted_answer': sample.metadata.get('extracted_answer', ''),
+        'ground_truth': sample.metadata.get('ground_truth', ''),
+        'response': sample.metadata.get('response', ''),
+    })
 
 overall_accuracy = (total_correct / total_samples) if total_samples > 0 else 0.0
 overall_coherence = (sum(all_coherence) / len(all_coherence)) if all_coherence else 0.0
 overall_exit_rate = (sum(all_exit_rates) / len(all_exit_rates)) if all_exit_rates else 0.0
+overall_avg_computation = (sum(all_avg_computation) / len(all_avg_computation)) if all_avg_computation else 0.0
+overall_avg_tokens = (sum(all_total_tokens) / len(all_total_tokens)) if all_total_tokens else 0.0
 
 print("\nOverall:")
 print(f"  Accuracy: {total_correct}/{total_samples} = {overall_accuracy:.3f} ({overall_accuracy*100:.1f}%)")
 print(f"  Avg Coherence: {overall_coherence:.3f}")
 print(f"  Avg Early Exit Rate: {overall_exit_rate:.2%}")
+print(f"  Avg Computation: {overall_avg_computation:.3f}")
+print(f"  Avg Total Tokens: {overall_avg_tokens:.1f}")
 
 results_summary = {
     'model_path': model_path,
@@ -356,4 +419,20 @@ results_summary = {
     'overall_accuracy': overall_accuracy,
     'overall_coherence': overall_coherence,
     'overall_exit_rate': overall_exit_rate,
+    'overall_avg_computation': overall_avg_computation,
+    'overall_avg_tokens': overall_avg_tokens,
 }
+
+samples_df = pd.DataFrame(sample_results)
+samples_csv_path = './eval_logs_tom/sample_results.csv'
+samples_df.to_csv(samples_csv_path, index=False)
+print(f"\nPer-sample results saved to: {samples_csv_path}")
+
+# Save summary results to CSV
+summary_df = pd.DataFrame([results_summary])
+summary_csv_path = './eval_logs_tom/summary_results.csv'
+import os
+file_exists = os.path.exists(summary_csv_path)
+
+summary_df.to_csv(summary_csv_path, mode='a', header=not file_exists, index=False)
+print(f"Summary results {'appended to' if file_exists else 'saved to'}: {summary_csv_path}")
