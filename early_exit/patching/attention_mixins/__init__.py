@@ -3,4 +3,5 @@ from early_exit.patching.attention_mixins.qwen2 import Qwen2DecoderLayerFakeAtte
 
 ATTN_MIXIN_DICT = {
     'Qwen2DecoderLayer': Qwen2DecoderLayerFakeAttentionForwardMixin,
+    'Qwen3DecoderLayer': Qwen2DecoderLayerFakeAttentionForwardMixin,
 }

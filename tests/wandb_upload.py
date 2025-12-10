@@ -3,9 +3,9 @@ import wandb
 
 PROJECT = "early-exit-RL-test"
 ENTITY = "vkarthik095-university-of-amsterdam"
-RUN_ID = "1bnvpy7w" #change to whatever run you need
-CKPT_DIR = "models/rl_20251203_tom_batch4_k6_lambda0.0" #change folder
-ARTIFACT_NAME = "model-checkpoints-lambda-0"
+RUN_ID = "ctv5haer" #change to whatever run you need
+CKPT_DIR = "models/rl_20251204_tom_rlmodel_batch4_k6_lambda0.1" #change folder
+ARTIFACT_NAME = "model-checkpoints-lambda-0_1"
 
 run = wandb.init(
     project=PROJECT,

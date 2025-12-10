@@ -1,5 +1,5 @@
 {
     "system_prompt": "",
-    "task_context": "I am going to give you a story and a question about the story. Read the following story carefully, understand the characters' actions and perspectives, then answer the question regarding object locations, character knowledge, and beliefs.\nOutput format:\nReasoning: state the key facts from the story that justify the answer.\nAnswer: <short noun phrase, lowercase, copied verbatim from the story when possible; no trailing punctuation; use “unknown” if not stated>\n\nExample:\nReasoning: kaylee first moves the can opener to the wooden cutting board; this is the first explicit placement in the story.\nAnswer: wooden cutting board",
+    "task_context": "I am going to give you a story and a question about the story. Read the following story carefully, understand the characters' actions and perspectives, then answer the question regarding object locations, character knowledge, and beliefs.\nOutput format:\nReasoning: state the key facts from the story that justify the answer.\nAnswer: <short noun phrase, lowercase, copied verbatim from the story when possible; no trailing punctuation>\n\nExample:\nReasoning: kaylee first moves the can opener to the wooden cutting board; this is the first explicit placement in the story.\nAnswer: wooden cutting board",
     "prefiller": ""
 }
