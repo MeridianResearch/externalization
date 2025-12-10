@@ -19,17 +19,17 @@ from datetime import datetime
 
 # LOAD IN EXPERIMENT ARGS
 num_epoch = 2                     # args.num_epoch
-num_exit_samples = 4                  # args.num_exit_samples
+num_exit_samples = 2                  # args.num_exit_samples
 device = "cuda"                    # args.device
-model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"                    # args.model_name
+model_name = "Qwen/Qwen3-4B" #"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"                    # args.model_name
 model_config_path = "config_deepseek.yaml"                     # args.model_config_path
 #dataset_path = "results_and_data/early_exit_sft_dataset/test/data.csv"                  # args.dataset_path
 #prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config.json"                    # args.prompt_config_path
 # teacher_data_path = "/workspace/data/teacher_generated_data_gzip/merged_teacher_data_sparse.pkl.gz" #update location - on runpod moving to workspace allowed for more disc space
-teacher_data_path = "downloaded_teacher_data/teacher_gsm8k_sparse.pkl.gz" #"results_and_data/early_exit_sft_dataset/test/teacher_gsm8k_sparse.pkl.gz" # maybe we can move to config?
+teacher_data_path = "teacher_data/merged_teacher_data_sparse_correct.pkl.gz" # maybe we can move to config?
 batch_size = 1                    # args.batch_size -- might want to sort out batching, but increasing num_exit_samples might be better + less effort
 
-save_freq = 500
+save_freq = 1500
 
 args = {
     'num_epoch': num_epoch,
@@ -102,17 +102,10 @@ for epoch in range(num_epoch):
         
             sft_teacher_final_layer_logprobs = teacher_batch['sft_teacher_final_layer_logprobs'].to(device)
             if sft_teacher_final_layer_logprobs.is_sparse:
-                #dense = sft_teacher_final_layer_logprobs.to_dense()          
-                #dense[dense == 0] = -14.0 # restore safe floor
-                #sft_teacher_final_layer_logprobs = dense
-                #dense = dense - 20.0  # undo the +20 shift first
-                #dense[dense == -20.0] = -100.0  # zeros become -20 after shift, set them to -inf
-                #sft_teacher_final_layer_logprobs = dense
                 dense = sft_teacher_final_layer_logprobs.to_dense()          
-                #print(f"Before shift - min: {dense.min()}, max: {dense.max()}, zeros: {(dense == 0).sum()}")
-                dense = dense - 20.0
-                #print(f"After shift - min: {dense.min()}, max: {dense.max()}, -20s: {(dense == -20.0).sum()}")
-                dense[dense == -20.0] = -14.0 # float('-inf')
+                #dense = dense - 20.0
+                #dense[dense == -20.0] = -14.0 # float('-inf')
+                dense[dense == 0.0] = -14.0
                 sft_teacher_final_layer_logprobs = dense
             
         #exitable_layer_idxs = teacher_batch['exitable_layer_idxs'].to(device)
@@ -238,4 +231,3 @@ for epoch in range(num_epoch):
 print(f"Saving final model to {save_dir}...")
 save_model(model, save_dir)
 
-wandb.finish()
