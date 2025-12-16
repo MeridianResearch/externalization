@@ -26,7 +26,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 device = "cuda"
 model_name = "Qwen/Qwen3-4B" #"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
-config_path = "config_deepseek.yaml"
+config_path = "config_qwen3.yaml" #"config_deepseek.yaml"
 sft_model_path = "models/early_exit_20251211_layers_7_big/step_600"  # TODO: set path to SFT checkpoint
 rl_model_path = "models/rl_20251211_tom_rlmodel_batch4_k2_lambda0.0/step_150"
 
