@@ -153,6 +153,23 @@ def extract_solution_text(solution_str: str, method: str = "strict"):
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", str(s).strip().lower())
 
+def ok_english_char(ch: str) -> bool:
+    o = ord(ch)
+
+    #common whitespace controls
+    if ch in ("\n", "\t", "\r"):
+        return True
+
+    #ASCII printable
+    if 0x20 <= o <= 0x7E:
+        return True
+
+    #common English typography / spacing
+    if o in (0x00A0, 0x2026) or (0x2018 <= o <= 0x201F) or (0x2013 <= o <= 0x2014):
+        return True
+
+    return False
+
 def compute_verification_rewards_text(completions_tokens, completions_text, correct_answers, input_prompt_length, tokenizer):
     rewards = torch.zeros(len(completions_text), dtype=torch.float32)
 
@@ -192,6 +209,12 @@ def compute_verification_rewards_text(completions_tokens, completions_text, corr
                     sim = float(L.normalized_similarity(p, ground_truth)) / 100.0
                     rewards[i] = -1.0 + sim
                     fmt_ok, ex = False, False
+
+        #extra penalty for non English characters
+        #bad = sum(1 for ch in completion_text if not ok_english_char(ch))
+        #ratio = bad / max(1, len(completion_text))
+        #penalty = 0.5 * ratio
+        #rewards[i] = rewards[i] - penalty
 
         format_ok.append(fmt_ok)
         sims.append(sim)
@@ -286,7 +309,8 @@ def compute_token_logprobs_student(model, tokens, prescribed_exit_layers, input_
     student_next_token_logprobs = compute_next_token_logprobs_from_logits(student_output_scores.logits, tokens)
     student_generated_token_logprobs = student_next_token_logprobs[:, input_prompt_length-1:] # the input_promt_length -1 is to capture all the generated tokens, not a trivial thing
     student_early_exit_logprobs = (model.early_exit_student_probs(collected_exit_logits) + 1e-16).log() 
-    return student_generated_token_logprobs, student_early_exit_logprobs
+    generated_logits = student_output_scores.logits[:, input_prompt_length-1:-1] #added for entropy calc
+    return student_generated_token_logprobs, student_early_exit_logprobs, generated_logits
 
 def compute_token_logprobs_reference(model, tokens, input_prompt_length):
     """

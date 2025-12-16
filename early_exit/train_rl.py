@@ -16,7 +16,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json, save_model
 from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions_batched, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty
 from early_exit.util import get_model, load_model_from_wandb, load_model, configs_from_json, save_model, CSVPromptDataset
-from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty, weighted_sft_loss
+from early_exit.rl_utils import apply_masking, create_attention_mask_from_tokens, generate_k_completions, center_rewards_per_prompt, map_layers_to_indices, weighted_sft_step, get_input_prompt_length, evaluate_coherence, compute_sample_labels, load_gsm8k_with_difficulty, compute_accuracy_by_difficulty, weighted_sft_loss, compute_entropy_from_logits, create_attention_mask_from_lengths
 from early_exit.rl_types import RLHyperparams, RolloutBatch
 from early_exit.rewards import compute_verification_rewards, compute_verification_rewards_text, compute_token_kl_from_logprobs, compute_token_logprobs_reference, compute_token_logprobs_student, compute_avg_exit_layer, extract_solution
 from early_exit.patching import replace_attention_layers, set_transformer_early_exit_mode
@@ -25,10 +25,10 @@ from torch.nn.utils.rnn import pad_sequence
 
 
 device = "cuda"
-model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+model_name = "Qwen/Qwen3-4B" #"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
-sft_model_path = "models/sft_model"  # TODO: set path to SFT checkpoint
-rl_model_path = "models/rl_20251203_tom_batch4_k6_lambda0/step_150"
+sft_model_path = "models/early_exit_20251211_layers_7_big/step_600"  # TODO: set path to SFT checkpoint
+rl_model_path = "models/rl_20251211_tom_rlmodel_batch4_k2_lambda0.0/step_150"
 
 DATASET_TYPE = "tom" # TODO: set to "gsm8k" or "tom"
 
@@ -38,7 +38,7 @@ RL_HPARAMS = RLHyperparams()
 training_steps_per_rollout = 1
 
 save_freq = 50
-save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}_{DATASET_TYPE}_rlmodel_batch{BATCH_SIZE}_k{RL_HPARAMS.k}_lambda{RL_HPARAMS.lambda_exit}"
+save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}_{DATASET_TYPE}_rlmodel_batch{BATCH_SIZE}_k{RL_HPARAMS.k}_lambda{RL_HPARAMS.lambda_exit}_nonenglish_penalty"
 
 # TOM dataset-specific paths
 TOM_DATASET_PATH = "results_and_data/early_exit_sft_dataset/test/tom_rl.csv"
@@ -52,9 +52,9 @@ student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
 
 # TODO: Choose which way to load model from below
-#student = load_model_from_wandb(student, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit-RL-test/model-checkpoints-lambda-0:v0')
+#student = load_model_from_wandb(student, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/model-checkpoints-KL-1_0:v0')
 #student = load_model(student, sft_model_path)
-student = load_model(student, rl_model_path)
+student = load_model(student, sft_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
@@ -124,6 +124,7 @@ def main_rl_training():
                 'objective/kl': 'Mean over generated tokens of (log p_student − log p_reference). This is a token-level log-probability gap, not the full softmax KL.',
                 'objective/non_score_reward': 'Mean of the penalty-only terms (− beta_kl×KL − lambda_exit×avg_exit). Higher magnitude indicates stronger regularization pressure.',
                 'objective/compute_total': 'Rough total compute: (average exit layer × mean completion length × k). Measures approximate computational cost.',
+                'objective/entropy': 'Average entropy of token predictions across generated completions.',
                 'rewards/verify_mean': "Mean verification reward from the final '#### <answer>' extraction. Exact match = 1.0, flexible numeric match = 0.5, wrong = 0.0, no answer/format errors = −1.0, minus small format penalties.",
                 'rewards/kl_penalty_component_mean': 'Mean of the KL penalty contribution beta_kl×(token-level KL estimate).',
                 'rewards/exit_layer_penalty_component_mean': 'Mean of the exit-layer penalty contribution lambda_exit×normalized average exit layer.',
@@ -229,7 +230,10 @@ def train_single_sample_loop(student, reference, optimizer, train_dataset, datal
                                                         tokenizer=tokenizer, config=config, device=device, 
                                                         system_prompt = system_prompt)
         input_prompt_length = get_input_prompt_length(tokenizer, prompt, system_prompt = system_prompt)  # TODO: very hacky, do it in a cleaner way
-        generated_attention_mask = create_attention_mask_from_tokens(completions['tokens'], tokenizer.pad_token_id)[:, input_prompt_length:]
+        #generated_attention_mask = create_attention_mask_from_tokens(completions['tokens'], tokenizer.pad_token_id)[:, input_prompt_length:]
+        exit_layer_lengths = [len(item) for item in exit_info['prescribed_exit_layers']]
+        generated_seq_len = completions['tokens'].shape[1] - input_prompt_length
+        generated_attention_mask = create_attention_mask_from_lengths(exit_layer_lengths, generated_seq_len, device)
         
 
         assert generated_attention_mask.sum(-1).tolist() == [len(item) for item in exit_info['prescribed_exit_layers']]
@@ -270,7 +274,7 @@ def train_single_sample_loop(student, reference, optimizer, train_dataset, datal
 
         for training_step in range(training_steps_per_rollout):
             # Compute current student logprobs (these change after each training step)
-            stu_logprobs, student_early_exit_logprobs = compute_token_logprobs_student(student, 
+            stu_logprobs, student_early_exit_logprobs, generated_logits = compute_token_logprobs_student(student, 
                                                           completions['tokens'], 
                                                           prescribed_exit_layers=prescribed_exit_layers,
                                                           input_prompt_length=input_prompt_length)  
@@ -341,6 +345,7 @@ def train_single_sample_loop(student, reference, optimizer, train_dataset, datal
                     'objective/kl': kl_tokens.mean().item(),
                     'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer.to(device)).mean().item(),
                     'objective/compute_total': avg_exit_layer.mean().item() * generated_lens.mean().item(),
+                    'objective/entropy': compute_entropy_from_logits(generated_logits, generated_attention_mask).mean().item(),
                     
                     # Exit metrics
                     'exit/min_layer': avg_exit_layer.min().item(),
@@ -515,6 +520,7 @@ def train_batched_loop(student, reference, optimizer, dataloader,
         acc_difficulty_sums = {}
         acc_count = 0
         sample_rows = []
+        batch_entropies = []
         
         for i in range(B):
             prompt = prompts[i]
@@ -525,8 +531,12 @@ def train_batched_loop(student, reference, optimizer, dataloader,
                                                         tokenizer=tokenizer, config=config, device=device, 
                                                         system_prompt = system_prompt)
             input_prompt_length = get_input_prompt_length(tokenizer, prompt, system_prompt=system_prompt)
-            generated_attention_mask = create_attention_mask_from_tokens(completions['tokens'], tokenizer.pad_token_id)[:, input_prompt_length:]
-            assert generated_attention_mask.sum(-1).tolist() == [len(item) for item in exit_info['prescribed_exit_layers']]
+            #print(completions)
+            #generated_attention_mask = create_attention_mask_from_tokens(completions['tokens'], tokenizer.pad_token_id)[:, input_prompt_length:]
+            exit_layer_lengths = [len(item) for item in exit_info['prescribed_exit_layers']]
+            generated_seq_len = completions['tokens'].shape[1] - input_prompt_length
+            generated_attention_mask = create_attention_mask_from_lengths(exit_layer_lengths, generated_seq_len, device)
+            assert generated_attention_mask.sum(-1).tolist() == [len(item) for item in exit_info['prescribed_exit_layers']] #no longer aligned
             
             print(f"Input prompt length (in tokens): {input_prompt_length}")
             set_transformer_early_exit_mode(student, 'sft_student')
@@ -557,7 +567,7 @@ def train_batched_loop(student, reference, optimizer, dataloader,
 
             for training_step in range(training_steps_per_rollout):
                 # Compute current student logprobs
-                stu_logprobs, student_early_exit_logprobs = compute_token_logprobs_student(
+                stu_logprobs, student_early_exit_logprobs, generated_logits = compute_token_logprobs_student(
                     student, completions['tokens'], 
                     prescribed_exit_layers=prescribed_exit_layers,
                     input_prompt_length=input_prompt_length)
@@ -618,6 +628,8 @@ def train_batched_loop(student, reference, optimizer, dataloader,
                     batch_neglog_pred.append(nl_pred)
                     batch_neglog_exit.append(nl_exit)
                     batch_neglog_total.append((nl_pred + nl_exit))
+                    entropy_per_sample = compute_entropy_from_logits(generated_logits, generated_attention_mask)
+                    batch_entropies.append(entropy_per_sample.detach().cpu())
                     
                     tokens_tensor = completions['tokens']
                     pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else -1
@@ -699,6 +711,7 @@ def train_batched_loop(student, reference, optimizer, dataloader,
                 'objective/kl': kl_tokens.mean().item(),
                 'objective/non_score_reward': (- RL_HPARAMS.beta_kl * kl_tokens - RL_HPARAMS.lambda_exit * avg_exit_layer).mean().item(),
                 'objective/compute_total': avg_exit_layer.mean().item() * generated_lens.mean().item(),
+                'objective/entropy': torch.cat(batch_entropies).mean().item(),
                 
                 # Exit metrics
                 'exit/min_layer': avg_exit_layer.min().item(),

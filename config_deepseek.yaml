@@ -23,8 +23,10 @@ generation:
   # num_beams: 1
   # temperature: 1.0
   # pad_token_id: 0
-  bos_token_id: 151646
-  eos_token_id: 151643
+  bos_token_id: 151643
+  eos_token_id: 151645
+  # bos_token_id: 151646
+  # eos_token_id: 151643
   # return_prompt: False
   # generate_ref_response: False
   use_cache: true

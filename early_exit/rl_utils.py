@@ -320,6 +320,15 @@ def create_attention_mask_from_tokens(tokens, pad_token_id: int):
     
     return mask
 
+def create_attention_mask_from_lengths(lengths, max_len, device):
+    """Create attention mask from sequence lengths."""
+    batch_size = len(lengths)
+    mask = torch.zeros(batch_size, max_len, dtype=torch.float32, device=device)
+    for i, length in enumerate(lengths):
+        mask[i, :length] = 1.0
+    return mask
+
+
 def apply_masking(input_probs, tokens, input_prompt_length, pad_token_id, mode = 'logprobs'):
     generated_tokens = tokens[:, input_prompt_length:]
     mask = create_attention_mask_from_tokens(generated_tokens, pad_token_id=pad_token_id)  # Assuming pad_token_id is 0
@@ -566,3 +575,11 @@ def compute_accuracy_by_difficulty(verify_rewards, difficulty_categories):
         results[f'{difficulty.lower()}_answer_accuracy'] = answer_acc
     
     return results
+
+
+def compute_entropy_from_logits(logits, attention_mask):
+    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+    probs = torch.exp(log_probs)
+    entropy = -(probs * log_probs).sum(dim=-1)  # [batch, seq_len]
+    masked_entropy = entropy * attention_mask
+    return masked_entropy.sum(dim=1) / attention_mask.sum(dim=1).clamp(min=1)

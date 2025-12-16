@@ -21,10 +21,10 @@ from inspect_ai.model import get_model as get_inspect_model, ChatMessageAssistan
 
 from inspect_ai.scorer import answer as answer_scorer, accuracy, stderr, mean, model_graded_qa, scorer, Score
 
-base_model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+base_model_name = "Qwen/Qwen3-4B" #"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_deepseek.yaml"
 device = "cuda"
-model_path = "models/rl_model_0_1/step_250"
+model_path = "models/rl_20251212_tom_rlmodel_batch4_k2_lambda1.0/step_200"
 
 dataset_path = "results_and_data/early_exit_sft_dataset/test/tom_eval.csv"
 prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config_tom.json"
@@ -46,7 +46,7 @@ model = load_model(model, model_path)
 #model = load_model_from_wandb(model, model_path = "models/rl_model_0_2", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit-RL-test/model-checkpoints-lambda-0_2:v0')
 #model = load_model_from_wandb(model, model_path = "models/rl_model_0_1", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit-RL-test/model-checkpoints-lambda-0_1:v0')
 
-total_layers = 28 #hardcoded as we know in this case
+total_layers = 36 #hardcoded as we know in this case
 
 set_transformer_early_exit_mode(model, 'free_generate')
 #set_transformer_early_exit_mode(model, 'sft_teacher')
@@ -405,6 +405,7 @@ overall_coherence = (sum(all_coherence) / len(all_coherence)) if all_coherence e
 overall_exit_rate = (sum(all_exit_rates) / len(all_exit_rates)) if all_exit_rates else 0.0
 overall_avg_computation = (sum(all_avg_computation) / len(all_avg_computation)) if all_avg_computation else 0.0
 overall_avg_tokens = (sum(all_total_tokens) / len(all_total_tokens)) if all_total_tokens else 0.0
+overall_tot_computation = overall_avg_tokens * overall_avg_computation
 
 print("\nOverall:")
 print(f"  Accuracy: {total_correct}/{total_samples} = {overall_accuracy:.3f} ({overall_accuracy*100:.1f}%)")
@@ -415,22 +416,23 @@ print(f"  Avg Total Tokens: {overall_avg_tokens:.1f}")
 
 results_summary = {
     'model_path': model_path,
-    'total_samples': total_samples,
-    'overall_accuracy': overall_accuracy,
-    'overall_coherence': overall_coherence,
-    'overall_exit_rate': overall_exit_rate,
-    'overall_avg_computation': overall_avg_computation,
-    'overall_avg_tokens': overall_avg_tokens,
+    'samples': total_samples,
+    'coherence': overall_coherence,
+    'exit_rate': overall_exit_rate,
+    'avg_compute': overall_avg_computation,
+    'avg_tokens': overall_avg_tokens,
+    'accuracy': overall_accuracy,
+    'tot_compute': overall_tot_computation,
 }
 
 samples_df = pd.DataFrame(sample_results)
-samples_csv_path = './eval_logs_tom/sample_results.csv'
+samples_csv_path = './eval_logs_tom/sample_results_4b.csv'
 samples_df.to_csv(samples_csv_path, index=False)
 print(f"\nPer-sample results saved to: {samples_csv_path}")
 
 # Save summary results to CSV
 summary_df = pd.DataFrame([results_summary])
-summary_csv_path = './eval_logs_tom/summary_results.csv'
+summary_csv_path = './eval_logs_tom/summary_results_4b.csv'
 import os
 file_exists = os.path.exists(summary_csv_path)
 
