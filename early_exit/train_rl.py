@@ -27,7 +27,7 @@ from torch.nn.utils.rnn import pad_sequence
 device = "cuda"
 model_name = "Qwen/Qwen3-4B" #"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_qwen3.yaml" #"config_deepseek.yaml"
-sft_model_path = "models/early_exit_20251211_layers_7_big/step_600"  # TODO: set path to SFT checkpoint
+sft_model_path = "models/early_exit_20251216_layers_7_big/step_600"  # TODO: set path to SFT checkpoint
 rl_model_path = "models/rl_20251211_tom_rlmodel_batch4_k2_lambda0.0/step_150"
 
 DATASET_TYPE = "tom" # TODO: set to "gsm8k" or "tom"
@@ -613,8 +613,11 @@ def train_batched_loop(student, reference, optimizer, dataloader,
                 final_advantages = normalized_advantages * ratio
             
                 # 6) Weighted SFT update (accumulate gradients)
+                
                 loss = weighted_sft_loss(stu_logprobs, student_sampled_exit_logprobs, final_advantages, generated_attention_mask, RL_HPARAMS)
+                    
                 (loss / accum_den).backward()
+                
                 total_loss_val += float(loss.detach())
 
                 # Batched accumulations
@@ -677,6 +680,7 @@ def train_batched_loop(student, reference, optimizer, dataloader,
                         "format_label": sample_labels['labels'][k_idx]['format_quality'],
                     })
 
+        torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=1.0)
         optimizer.step()
 
         # 7) Logging

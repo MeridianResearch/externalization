@@ -30,8 +30,109 @@ def generate_text_batched(model: AutoModelForCausalLM, prompt: str | List[str], 
     decoded_responses = tokenizer.batch_decode(all_model_outputs[0])
     return decoded_responses, all_model_outputs
 
-
 def generate_k_completions_batched(
+        model, 
+        prompts, 
+        k: int, 
+        tokenizer, 
+        config, 
+        device, 
+        system_prompt
+    ):
+    """
+    Free-generate K completions per prompt with early exits enabled.
+    Expected outputs (used later in the pipeline):
+    - completions:
+        - tokens: LongTensor of shape [batch*K, seq_len]; dtype=torch.long
+        - texts: list[str] of length batch*K
+    - exit_info:
+        - prescribed_exit_layers: Optional[LongTensor] of shape [batch*K, seq_len] for re-scoring
+    Typical ranges:
+    - seq_len: 16–512 depending on generation configuration
+    """
+    set_transformer_early_exit_mode(model, 'free_generate')
+    all_tokens = []
+    all_texts = []
+    all_prescribed_exit_layers = []
+    
+    # Batch all generations together: [p1, p1, ..., p1 (k times), p2, p2, ..., p2 (k times), ...]
+    batched_prompts = [p for p in prompts for _ in range(k)]
+    
+    with torch.no_grad():
+        decoded_responses, model_outputs = generate_text_batched(
+            model=model,
+            prompt=batched_prompts,
+            system_prompt=system_prompt,
+            prefiller='',
+            tokenizer=tokenizer,
+            generation_config=config['generation'],
+            device=device
+        )
+    
+    sequences, exit_layer_idxs = model_outputs
+    
+    # Process all outputs from the batch
+    for i in range(len(batched_prompts)):
+        tokens = sequences[i]
+        prescribed_exit_layers = exit_layer_idxs[i]
+        
+        all_tokens.append(tokens[:-1])
+        all_texts.append(decoded_responses[i])
+        all_prescribed_exit_layers.append(prescribed_exit_layers[1:])
+    
+    max_seq_len = max(len(tokens) for tokens in all_tokens)
+    padded_tokens = []
+    final_prescribed_layers = []  # no padding since will mess up avg exit layer
+    
+    for i, (tokens, exit_layers) in enumerate(zip(all_tokens, all_prescribed_exit_layers)):
+        prompt_len_in_tokens = len(tokens) - len(exit_layers)
+        
+        # Only search for EOS in the GENERATED portion (after prompt)
+        generated_part = tokens[prompt_len_in_tokens:]
+        
+        eos_mask = (generated_part == tokenizer.eos_token_id)
+        if eos_mask.any():
+            # First EOS in the generated portion
+            eos_idx_in_generated = eos_mask.nonzero(as_tuple=False)[0].item() + 1  # +1 to include EOS
+        else:
+            # No EOS found - sequence was truncated at max length
+            eos_idx_in_generated = len(generated_part)
+        
+        # Trim exit layers to match generated length
+        trimmed_exit_layers = exit_layers[:eos_idx_in_generated]
+        
+        # Safety check: ensure we have at least one exit layer
+        if len(trimmed_exit_layers) == 0:
+            if len(exit_layers) > 0:
+                trimmed_exit_layers = exit_layers[:1]
+            else:
+                # Fallback: create a single exit layer pointing to final layer
+                num_layers = model.config.num_hidden_layers if hasattr(model, 'config') else 35
+                trimmed_exit_layers = torch.tensor([num_layers - 1], device=tokens.device, dtype=torch.float)
+        
+        # Padding for tokens
+        pad_length = max_seq_len - len(tokens)
+        if pad_length > 0:
+            padded_token = torch.cat([tokens, torch.full((pad_length,), tokenizer.pad_token_id, dtype=tokens.dtype, device=tokens.device)])
+        else:
+            padded_token = tokens
+            
+        padded_tokens.append(padded_token)
+        final_prescribed_layers.append(trimmed_exit_layers)
+        
+    completions_tokens = torch.stack(padded_tokens, dim=0)
+    completions = {
+        'tokens': completions_tokens,
+        'texts': all_texts
+    }
+    exit_info = {
+        'prescribed_exit_layers': final_prescribed_layers
+    }
+    
+    return completions, exit_info
+
+
+def generate_k_completions_batched_old(
         model, 
         prompts, 
         k: int, 
