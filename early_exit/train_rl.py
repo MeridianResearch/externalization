@@ -27,8 +27,8 @@ from torch.nn.utils.rnn import pad_sequence
 device = "cuda"
 model_name = "Qwen/Qwen3-4B" #"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_qwen3.yaml" #"config_deepseek.yaml"
-sft_model_path = "models/early_exit_20251216_layers_7_big/step_600"  # TODO: set path to SFT checkpoint
-rl_model_path = "models/rl_20251211_tom_rlmodel_batch4_k2_lambda0.0/step_150"
+sft_model_path = "models/early_exit_20251222_layers_7_big/step_600"  # TODO: set path to SFT checkpoint
+rl_model_path = "models/rl_20251222_tom_rlmodel_batch4_k2_lambda0.0_beta0.1/step_200"
 
 DATASET_TYPE = "tom" # TODO: set to "gsm8k" or "tom"
 
@@ -38,7 +38,7 @@ RL_HPARAMS = RLHyperparams()
 training_steps_per_rollout = 1
 
 save_freq = 50
-save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}_{DATASET_TYPE}_rlmodel_batch{BATCH_SIZE}_k{RL_HPARAMS.k}_lambda{RL_HPARAMS.lambda_exit}_nonenglish_penalty"
+save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}_{DATASET_TYPE}_rlmodel_batch{BATCH_SIZE}_k{RL_HPARAMS.k}_lambda{RL_HPARAMS.lambda_exit}_beta{RL_HPARAMS.beta_kl}"
 
 # TOM dataset-specific paths
 TOM_DATASET_PATH = "results_and_data/early_exit_sft_dataset/test/tom_rl.csv"
@@ -54,7 +54,7 @@ student = replace_attention_layers(student, config['lora'], device)
 # TODO: Choose which way to load model from below
 #student = load_model_from_wandb(student, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/model-checkpoints-KL-1_0:v0')
 #student = load_model(student, sft_model_path)
-student = load_model(student, sft_model_path)
+student = load_model(student, rl_model_path)
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)

@@ -128,15 +128,9 @@ def extract_solution_text(solution_str: str, method: str = "strict"):
         if len(parts) >= 2:
             s = parts[-1]
 
-        anchor = 0
-        rs = list(re.finditer(r"^\s*reasoning\s*:\s*", s, flags=re.I | re.M))
-        if rs:
-            anchor = max(anchor, rs[-1].end())
-        s_tail = s[anchor:] if anchor > 0 else s
-
         matches = list(re.finditer(
             r"^\s*(?:\*\*\s*)?answer(?:\s*\*\*)?\s*[:：]\s*(.+?)\s*$",
-            s_tail, flags=re.I | re.M
+            s, flags=re.I | re.M
         ))
         if not matches:
             return None
@@ -215,6 +209,12 @@ def compute_verification_rewards_text(completions_tokens, completions_text, corr
         #ratio = bad / max(1, len(completion_text))
         #penalty = 0.5 * ratio
         #rewards[i] = rewards[i] - penalty
+
+        #extra penalty for multiple "Answer:"
+        answer_count = len(re.findall(r"^\s*(?:\*\*\s*)?answer(?:\s*\*\*)?\s*[:：]", completion_text, flags=re.I | re.M))
+        if answer_count > 1:
+            multi_answer_penalty = 0.2 * (answer_count - 1)  # 0.2 penalty per extra
+            rewards[i] = rewards[i] - multi_answer_penalty
 
         format_ok.append(fmt_ok)
         sims.append(sim)
@@ -364,7 +364,7 @@ def compute_avg_exit_layer(prescribed_exit_layers, model):
         FloatTensor [batch*K]: Average exit layer per sequence.
     """
     
-    total_layers = model.config.num_hidden_layers if hasattr(model, 'config') else 28 #get total layers from config
+    total_layers = model.config.num_hidden_layers if hasattr(model, 'config') else 36 #get total layers from config
     final_layer_idx = float(total_layers - 1)  #0-indexed
 
     avg_exit_layers = []
