@@ -258,14 +258,11 @@ class CSVPromptBatch:
     def __post_init__(self):
         pass
 
-
 class CSVPromptDataset(Dataset):
 
     def __init__(self, tsv_path: str, json_path: Optional[str] = None):
         self.df = pd.read_csv(tsv_path, header=0)
         self.columns = [c.strip() for c in self.df.columns.tolist()]
-
-        #assert self.columns == ['story', 'question'], "Need this dataset structure right now!"
 
         self.system_prompt = ""
         self.task_context = ""
@@ -287,11 +284,14 @@ class CSVPromptDataset(Dataset):
             self.schema = 'prompt_answer'
         elif {'prompt','correct_answer'}.issubset(cols):
             self.schema = 'prompt_correct_answer'
+        elif {'question', 'answer'}.issubset(cols):
+            self.schema = 'question_answer'
         else:
             raise AssertionError(
                 f"Unsupported CSV columns {self.columns}. "
                 "Expected one of: ['story','question','answer'], "
-                "['story','question'], ['prompt','answer'], ['prompt','correct_answer']."
+                "['story','question'], ['prompt','answer'], ['prompt','correct_answer'], "
+                "['question', 'answer']."
             )
 
     def __len__(self):
@@ -303,6 +303,8 @@ class CSVPromptDataset(Dataset):
     def _compose_prompt(self, row: Dict[str, Any]) -> str:
         if self.schema in ('story_question', 'story_question_answer'):
             core = f"{self.task_context}\n\n{row['story']}\n\n{row['question']}"
+        elif self.schema == 'question_answer':
+            core = f"{self.task_context}\n\n{row['question']}"
         else:
             core = str(row['prompt'])
         return core
@@ -314,6 +316,8 @@ class CSVPromptDataset(Dataset):
             return str(row['answer'])
         if self.schema == 'prompt_correct_answer':
             return str(row['correct_answer'])
+        if self.schema == 'question_answer':
+            return str(row['answer'])
         # 'story_question' has no labels
         return None
 

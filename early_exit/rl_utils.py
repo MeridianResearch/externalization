@@ -564,7 +564,7 @@ Overall: X/40
 Brief explanation: [your reasoning]
 """
     
-    judge_model = get_inspect_model("openai/gpt-5")
+    judge_model = get_inspect_model("openai/gpt-4o")
     eval_result = await judge_model.generate(eval_prompt)
     
     eval_text = eval_result.completion

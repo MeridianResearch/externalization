@@ -24,13 +24,14 @@ from shared_utils.load import get_tokenizer, configs_from_yaml
 from torch.nn.utils.rnn import pad_sequence
 
 
-device = "cuda"
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")     
 model_name = "Qwen/Qwen3-4B" #"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 config_path = "config_qwen3.yaml" #"config_deepseek.yaml"
-sft_model_path = "models/early_exit_20251216_layers_7_big/step_600"  # TODO: set path to SFT checkpoint
-rl_model_path = "models/rl_20251211_tom_rlmodel_batch4_k2_lambda0.0/step_150"
+sft_model_path = "models/early_exit_20251230_layers_7_big/step_500" # TODO: set path to SFT checkpoint
+#rl_model_path = "models/rl_20251211_tom_rlmodel_batch4_k2_lambda0.0/step_150"
 
-DATASET_TYPE = "tom" # TODO: set to "gsm8k" or "tom"
+DATASET_TYPE = "aiw" # TODO: set to "gsm8k" or "tom"
 
 BATCH_SIZE = 4 # TODO
 
@@ -41,8 +42,8 @@ save_freq = 50
 save_dir = f"models/rl_{datetime.now().strftime('%Y%m%d')}_{DATASET_TYPE}_rlmodel_batch{BATCH_SIZE}_k{RL_HPARAMS.k}_lambda{RL_HPARAMS.lambda_exit}_nonenglish_penalty"
 
 # TOM dataset-specific paths
-TOM_DATASET_PATH = "results_and_data/early_exit_sft_dataset/test/tom_rl.csv"
-TOM_PROMPT_CONFIG_PATH = "results_and_data/early_exit_sft_dataset/test/prompt_config_tom.json"
+AIW_DATASET_PATH = "results_and_data/early_exit_sft_dataset/test/rg_questions_answers_aiw.csv"
+AIW_PROMPT_CONFIG_PATH = "results_and_data/early_exit_sft_dataset/test/prompt_config_aiw.json"
 
 # --- Models (schema) ---
 tokenizer = get_tokenizer(model_name)
@@ -52,9 +53,16 @@ student = get_model(model_name, config['model'], device)
 student = replace_attention_layers(student, config['lora'], device)
 
 # TODO: Choose which way to load model from below
-#student = load_model_from_wandb(student, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit/model-checkpoints-KL-1_0:v0')
+student = load_model_from_wandb(student, model_path = "models/sft_model", artifact_path = 'vkarthik095-university-of-amsterdam/early-exit-aiw/sft-aiw-step-500:v0')
 #student = load_model(student, sft_model_path)
-student = load_model(student, sft_model_path)
+#student = load_model(student, sft_model_path)
+
+model_name="Qwen/Qwen3-4B"                    # args.model_name
+model_config_path = "../config_qwen.yaml"                     # args.model_config_path
+student = get_model(model_name, config['model'], device)
+student = replace_attention_layers(student, config['lora'], device)
+
+
 
 # Reference policy: base unmodified model without early exit
 reference = get_model(model_name, config['model'], device)
@@ -82,7 +90,18 @@ elif DATASET_TYPE == "tom":
     system_prompt = dataset.system_prompt
     use_difficulty = False
     verification_func = compute_verification_rewards_text
-    
+elif DATASET_TYPE == "aiw":
+    dataset = CSVPromptDataset(AIW_DATASET_PATH, AIW_PROMPT_CONFIG_PATH)
+    # Fill missing columns with empty strings/index as requested
+    dataset.df['story'] = ""
+    dataset.df['infilled_story'] = ""
+    dataset.df['idx'] = dataset.df.index
+
+    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, collate_fn=dataset.collate_fn, shuffle=False)
+    train_dataset = None
+    system_prompt = dataset.system_prompt
+    use_difficulty = False
+    verification_func = compute_verification_rewards_text
 
 def main_rl_training():
     """
@@ -108,7 +127,7 @@ def main_rl_training():
     table_history = []
 
     run = wandb.init(
-        project="early-exit-RL-test",
+        project="early-exit-aiw",
         entity="vkarthik095-university-of-amsterdam",
         name=f"k={RL_HPARAMS.k}_n={BATCH_SIZE}_{DATASET_TYPE}_rl_lambda={RL_HPARAMS.lambda_exit}_beta={RL_HPARAMS.beta_kl}",
         config=dict(

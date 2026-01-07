@@ -1,0 +1,5 @@
+{
+    "system_prompt": "",
+    "task_context": "I am going to give you a logic problem. Read it carefully and think step-by-step to derive the solution. Output format: Reasoning: explain the logical steps. Answer: <The final answer only>",
+    "prefiller": ""
+}
