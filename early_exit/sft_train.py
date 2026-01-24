@@ -3,6 +3,15 @@ from torch.optim import Adam
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
+
+import sys
+sys.path.append("../")
+sys.path.append("../../")
+
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+
 #from shared_utils.data import CSVPromptDataset
 from early_exit.util import get_model, CSVPromptDataset, save_model
 from shared_utils.load import get_tokenizer, configs_from_yaml
@@ -19,8 +28,8 @@ num_epoch = 1                     # args.num_epoch
 num_exit_samples = 1                  # args.num_exit_samples
 device = "cuda"                    # args.device
 model_name = "Qwen/Qwen3-4B" # "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"                    # args.model_name
-model_config_path = "config_deepseek.yaml"                     # args.model_config_path
-dataset_path = "results_and_data/early_exit_sft_dataset/test/theory_of_mind_roundrobin.csv"                  # args.dataset_path
+model_config_path = "config_qwen3.yaml"                     # args.model_config_path
+dataset_path = "results_and_data/early_exit_sft_dataset/test/rg_leg_counting_dataset.csv"                  # args.dataset_path
 prompt_config_path = "results_and_data/early_exit_sft_dataset/test/prompt_config_tom.json"                    # args.prompt_config_path
 batch_size = 1                    # args.batch_size -- might want to sort out batching, but increasing num_exit_samples might be better + less effort
 
