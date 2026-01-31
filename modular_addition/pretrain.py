@@ -10,6 +10,23 @@ from modular_addition.model import ModularAdditionModel, ModularAdditionConfig
 from modular_addition.data import ModularAdditionDataset
 
 
+def batch_accuracy(logits, input_ids, eq_token_id):
+    """Vectorized accuracy: check if prediction at the first = position matches the next token."""
+    # Find first = in each row
+    eq_mask = input_ids == eq_token_id  # [B, T]
+    # Get index of first = per row (T if none found)
+    has_eq = eq_mask.any(dim=1)
+    eq_pos = eq_mask.float().argmax(dim=1)  # [B] — first True index per row
+    valid = has_eq & (eq_pos + 1 < input_ids.shape[1])
+    if not valid.any():
+        return 0, 0
+    eq_pos_valid = eq_pos[valid]  # [V]
+    preds = logits[valid].gather(1, eq_pos_valid.unsqueeze(1).unsqueeze(2).expand(-1, 1, logits.shape[2])).squeeze(1).argmax(dim=1)
+    targets = input_ids[valid].gather(1, (eq_pos_valid + 1).unsqueeze(1)).squeeze(1)
+    correct = (preds == targets).sum().item()
+    return correct, valid.sum().item()
+
+
 def evaluate(model, dataloader, tokenizer, device):
     model.eval()
     correct = 0
@@ -24,21 +41,9 @@ def evaluate(model, dataloader, tokenizer, device):
             out = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
             total_loss += out.loss.item()
             n_batches += 1
-            # Check accuracy: predict the token right after '='
-            logits = out.logits
-            for i in range(input_ids.shape[0]):
-                # Find the = token position
-                eq_positions = (input_ids[i] == tokenizer.eq_token_id).nonzero(as_tuple=True)[0]
-                if len(eq_positions) == 0:
-                    continue
-                eq_pos = eq_positions[0].item()
-                if eq_pos + 1 >= input_ids.shape[1]:
-                    continue
-                pred = logits[i, eq_pos].argmax().item()
-                target = input_ids[i, eq_pos + 1].item()
-                if pred == target:
-                    correct += 1
-                total += 1
+            c, t = batch_accuracy(out.logits, input_ids, tokenizer.eq_token_id)
+            correct += c
+            total += t
     accuracy = correct / total if total > 0 else 0.0
     avg_loss = total_loss / n_batches if n_batches > 0 else 0.0
     model.train()
@@ -103,21 +108,10 @@ def main(config: Config | None = None):
             optimizer.step()
             total_loss += loss.item()
 
-            # Train accuracy
             with torch.no_grad():
-                logits = out.logits
-                for i in range(input_ids.shape[0]):
-                    eq_positions = (input_ids[i] == tokenizer.eq_token_id).nonzero(as_tuple=True)[0]
-                    if len(eq_positions) == 0:
-                        continue
-                    eq_pos = eq_positions[0].item()
-                    if eq_pos + 1 >= input_ids.shape[1]:
-                        continue
-                    pred = logits[i, eq_pos].argmax().item()
-                    target = input_ids[i, eq_pos + 1].item()
-                    if pred == target:
-                        train_correct += 1
-                    train_total += 1
+                c, t = batch_accuracy(out.logits, input_ids, tokenizer.eq_token_id)
+                train_correct += c
+                train_total += t
 
         avg_train_loss = total_loss / len(train_loader)
         train_acc = train_correct / train_total if train_total > 0 else 0.0

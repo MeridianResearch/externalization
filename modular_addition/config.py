@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 @dataclass
 class ModelConfig:
     d_model: int = 256
-    n_layers: int = 6
-    n_heads: int = 8
+    n_layers: int = 4
+    n_heads: int = 4
     max_seq_len: int = 256
     dropout: float = 0.1
 
@@ -20,7 +20,7 @@ class PretrainConfig:
     weight_decay: float = 0.01
     dataset_size: int = 100_000
     eval_size: int = 5_000
-    num_operands_range: tuple[int, int] = (2, 8)
+    num_operands_range: tuple[int, int] = (2, 6)
     save_path: str = "checkpoints/pretrain"
 
 
