@@ -21,7 +21,8 @@ class LayerFakeAttentionForwardMixin(ABC, nn.Module):
         super().__init__(*args, **kwargs)
 
         self.self_attn.base_self_attn_forward = self.self_attn.forward
-        self.self_attn.patched_self_attn_forward = MethodType(self.patched_attention_forward, self.self_attn)
+        self.self_attn.patched_self_attn_forward = self.self_attn.forward
+        #self.self_attn.patched_self_attn_forward = MethodType(self.patched_attention_forward, self.self_attn)
 
     @abstractmethod
     def patched_layer_forward(self, hidden_states: _T, *_, unfrozen_idx_or_mask: List[int], **kwargs):

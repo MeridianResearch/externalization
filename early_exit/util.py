@@ -22,7 +22,7 @@ def module_name_is_layer_base(name: str):
     is_layer = (split_by_dots[-2] == 'layers')
     if is_layer:
         layer_idx = int(split_by_dots[-1])
-        return layer_idx % 5 == 0 and layer_idx > 0
+        return layer_idx > 0
         #return layer_idx % 3 == 0
         #return layer_idx >= 0
     else:
