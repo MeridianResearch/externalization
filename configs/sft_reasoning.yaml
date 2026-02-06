@@ -1,0 +1,38 @@
+# SFT reasoning training config for ModularAdditionModel
+# Trains on CoT data with <think> tags
+
+p: 113
+device: cuda
+
+data:
+  source: sft
+  n_operands_min: 4
+  n_operands_max: 8
+  n_samples_per_n: 10000
+  train_frac: 0.8
+  seed: 43
+  loss_type: after_first_eq
+  combine_probs: [0.5, 0.5]
+
+model:
+  d_model: 256
+  n_layers: 6
+  n_heads: 8  # Must divide d_model (256/8=32)
+  max_seq_len: 64
+  dropout: 0.0
+  # checkpoint_path: null  # Set to load from checkpoint
+
+training:
+  epochs: 200
+  batch_size: 64
+  lr: 3e-4
+  weight_decay: 0.1
+  grad_clip: 1.0
+
+logging:
+  log_every: 5
+  save_every: 50
+  save_best: true
+  output_dir: outputs/sft_hf
+  use_wandb: false
+  wandb_project: modular-addition-cot

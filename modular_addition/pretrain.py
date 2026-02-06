@@ -1,132 +1,171 @@
-"""Stage 1a: Pretrain model to output answers for modular addition."""
+"""Pretraining script for modular addition."""
 
-import os
+import argparse
+from dataclasses import asdict
+from datetime import datetime
+from pathlib import Path
+
 import torch
+import yaml
 from torch.utils.data import DataLoader
 
-from modular_addition.config import Config
-from modular_addition.tokenizer import ModularAdditionTokenizer
-from modular_addition.model import ModularAdditionModel, ModularAdditionConfig
-from modular_addition.data import ModularAdditionDataset
+from modular_addition import (
+    ModularAdditionTokenizer,
+    create_model_from_config,
+    PretrainDataset,
+    DataCollator,
+)
+from modular_addition.config import PretrainConfig, ModelConfig, DataConfig
 
 
-def batch_accuracy(logits, input_ids, eq_token_id):
-    """Vectorized accuracy: check if prediction at the first = position matches the next token."""
-    # Find first = in each row
-    eq_mask = input_ids == eq_token_id  # [B, T]
-    # Get index of first = per row (T if none found)
-    has_eq = eq_mask.any(dim=1)
-    eq_pos = eq_mask.float().argmax(dim=1)  # [B] — first True index per row
-    valid = has_eq & (eq_pos + 1 < input_ids.shape[1])
-    if not valid.any():
-        return 0, 0
-    eq_pos_valid = eq_pos[valid]  # [V]
-    preds = logits[valid].gather(1, eq_pos_valid.unsqueeze(1).unsqueeze(2).expand(-1, 1, logits.shape[2])).squeeze(1).argmax(dim=1)
-    targets = input_ids[valid].gather(1, (eq_pos_valid + 1).unsqueeze(1)).squeeze(1)
-    correct = (preds == targets).sum().item()
-    return correct, valid.sum().item()
+def load_config(config_path: str) -> PretrainConfig:
+    with open(config_path) as f:
+        raw = yaml.safe_load(f)
+
+    # Build nested dataclasses from flat YAML
+    model_cfg = ModelConfig(**raw.pop("model", {}))
+    data_raw = raw.pop("data", {})
+    if "n_operands" in data_raw:
+        data_raw["n_operands"] = tuple(data_raw["n_operands"])
+    data_cfg = DataConfig(**data_raw)
+
+    return PretrainConfig(model=model_cfg, data=data_cfg, **raw)
 
 
-def evaluate(model, dataloader, tokenizer, device):
+@torch.no_grad()
+def evaluate(model, loader, tokenizer, device):
+    """Compute loss and final-answer accuracy over a dataloader."""
     model.eval()
-    correct = 0
-    total = 0
-    total_loss = 0.0
+    total_loss = 0
     n_batches = 0
-    with torch.no_grad():
-        for batch in dataloader:
-            input_ids = batch["input_ids"].to(device)
-            labels = batch["labels"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            out = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-            total_loss += out.loss.item()
-            n_batches += 1
-            c, t = batch_accuracy(out.logits, input_ids, tokenizer.eq_token_id)
-            correct += c
-            total += t
-    accuracy = correct / total if total > 0 else 0.0
-    avg_loss = total_loss / n_batches if n_batches > 0 else 0.0
-    model.train()
-    return avg_loss, accuracy
+    total_correct = 0
+    total_count = 0
+
+    for batch in loader:
+        batch = {k: v.to(device) for k, v in batch.items()}
+        outputs = model(**batch)
+        total_loss += outputs.loss.item()
+        n_batches += 1
+
+        labels = batch["labels"]
+        preds = outputs.logits.argmax(dim=-1)
+
+        eos_mask = labels == tokenizer.eos_token_id
+        has_eos = eos_mask.any(dim=-1)
+        eos_pos = eos_mask.int().argmax(dim=-1)
+
+        ans_pos = (eos_pos - 1).clamp(min=0)
+        pred_pos = (eos_pos - 2).clamp(min=0)
+
+        pred_ans = preds.gather(1, pred_pos.unsqueeze(1)).squeeze(1)
+        true_ans = labels.gather(1, ans_pos.unsqueeze(1)).squeeze(1)
+
+        correct = (pred_ans == true_ans) & has_eos
+        total_correct += correct.sum().item()
+        total_count += has_eos.sum().item()
+
+    return {
+        "loss": total_loss / max(n_batches, 1),
+        "acc": total_correct / max(total_count, 1),
+    }
 
 
-def main(config: Config | None = None):
-    if config is None:
-        config = Config()
+def train(cfg: PretrainConfig):
+    output_dir = Path(cfg.output_dir) / datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    torch.manual_seed(config.seed)
-    device = config.device
+    # Save config
+    with open(output_dir / "config.yaml", "w") as f:
+        yaml.dump(asdict(cfg), f)
 
-    tokenizer = ModularAdditionTokenizer(p=config.p)
-
-    model_config = ModularAdditionConfig(
-        vocab_size=tokenizer.vocab_size,
-        d_model=config.model.d_model,
-        n_layers=config.model.n_layers,
-        n_heads=config.model.n_heads,
-        max_seq_len=config.model.max_seq_len,
-        dropout=config.model.dropout,
-        pad_token_id=tokenizer.pad_token_id,
-        bos_token_id=tokenizer.bos_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-    )
-    model = ModularAdditionModel(model_config).to(device)
+    # Setup
+    tokenizer = ModularAdditionTokenizer(p=cfg.p)
+    model = create_model_from_config(tokenizer, asdict(cfg.model)).to(cfg.device)
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    train_ds = ModularAdditionDataset(
-        tokenizer, mode="pretrain", size=config.pretrain.dataset_size,
-        num_operands_range=config.pretrain.num_operands_range,
-        max_seq_len=config.model.max_seq_len, seed=config.seed,
+    # Data
+    full_dataset = PretrainDataset(
+        tokenizer,
+        n_samples=cfg.data.n_samples,
+        n_operands=cfg.data.n_operands,
+        seed=cfg.data.seed,
     )
-    eval_ds = ModularAdditionDataset(
-        tokenizer, mode="pretrain", size=config.pretrain.eval_size,
-        num_operands_range=config.pretrain.num_operands_range,
-        max_seq_len=config.model.max_seq_len, seed=config.seed + 1,
-    )
-    train_loader = DataLoader(train_ds, batch_size=config.pretrain.batch_size, shuffle=True)
-    eval_loader = DataLoader(eval_ds, batch_size=config.pretrain.batch_size)
+    n_train = int(len(full_dataset) * cfg.data.train_frac)
+    n_test = len(full_dataset) - n_train
+    train_dataset, test_dataset = torch.utils.data.random_split(full_dataset, [n_train, n_test])
 
+    collator = DataCollator(tokenizer)
+    train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True, collate_fn=collator)
+    test_loader = DataLoader(test_dataset, batch_size=cfg.batch_size, shuffle=False, collate_fn=collator)
+
+    # Optimizer
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=config.pretrain.lr, weight_decay=config.pretrain.weight_decay
+        model.parameters(),
+        lr=cfg.lr,
+        weight_decay=cfg.weight_decay,
     )
 
-    for epoch in range(config.pretrain.epochs):
-        model.train()
-        total_loss = 0.0
-        train_correct = 0
-        train_total = 0
-        for batch in train_loader:
-            input_ids = batch["input_ids"].to(device)
-            labels = batch["labels"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
+    # Training
+    epochs = cfg.epochs
 
-            out = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-            loss = out.loss
+    # Logging: num_logs or log_every (in epochs)
+    if cfg.num_logs is not None:
+        log_every = max(1, epochs // cfg.num_logs)
+    else:
+        log_every = cfg.log_every
+
+    # Checkpoints: num_checkpoints or save_every (in epochs)
+    if cfg.num_checkpoints is not None:
+        save_every = max(1, epochs // cfg.num_checkpoints)
+    else:
+        save_every = cfg.save_every
+
+    best_test_loss = float("inf")
+
+    for epoch in range(epochs):
+        model.train()
+        total_loss = 0
+        n_batches = 0
+
+        for batch in train_loader:
+            batch = {k: v.to(cfg.device) for k, v in batch.items()}
+            outputs = model(**batch)
+            loss = outputs.loss
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
             total_loss += loss.item()
+            n_batches += 1
 
-            with torch.no_grad():
-                c, t = batch_accuracy(out.logits, input_ids, tokenizer.eq_token_id)
-                train_correct += c
-                train_total += t
+        avg_loss = total_loss / max(n_batches, 1)
 
-        avg_train_loss = total_loss / len(train_loader)
-        train_acc = train_correct / train_total if train_total > 0 else 0.0
-        eval_loss, eval_acc = evaluate(model, eval_loader, tokenizer, device)
-        print(f"Epoch {epoch+1}/{config.pretrain.epochs} | "
-              f"Train Loss: {avg_train_loss:.4f} | Train Acc: {train_acc:.4f} | "
-              f"Eval Loss: {eval_loss:.4f} | Eval Acc: {eval_acc:.4f}")
+        # Eval
+        if epoch % log_every == 0 or epoch == epochs - 1:
+            train_metrics = evaluate(model, train_loader, tokenizer, cfg.device)
+            test_metrics = evaluate(model, test_loader, tokenizer, cfg.device)
+            # Save best
+            saved = ""
+            if test_metrics["loss"] < best_test_loss:
+                best_test_loss = test_metrics["loss"]
+                torch.save(model, output_dir / "best_model.pt")
+                saved = " ✓"
 
-    # Save
-    os.makedirs(config.pretrain.save_path, exist_ok=True)
-    save_path = os.path.join(config.pretrain.save_path, "model.pt")
-    torch.save({"model_state_dict": model.state_dict(), "config": model_config}, save_path)
-    print(f"Saved to {save_path}")
-    return model
+            print(
+                f"Epoch {epoch}: train_loss={train_metrics['loss']:.4f} train_acc={train_metrics['acc']:.4f}"
+                f" test_loss={test_metrics['loss']:.4f} test_acc={test_metrics['acc']:.4f}{saved}"
+            )
+
+        # Save checkpoint
+        if save_every and (epoch % save_every == 0 or epoch == epochs - 1):
+            torch.save(model, output_dir / f"model_epoch_{epoch}.pt")
+
+    # Save final
+    torch.save(model, output_dir / "final_model.pt")
+    print(f"Training complete. Model saved to {output_dir / 'final_model.pt'}")
 
 
 if __name__ == "__main__":
-    main()
+    cfg = PretrainConfig()
+    train(cfg)

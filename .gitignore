@@ -25,3 +25,5 @@ run_sft_train_gsm8k.sh
 magic_commands.txt
 run_rl_train_sft_base.sh
 run_eval.sh
+.ai-code/
+outputs/*
